@@ -767,7 +767,18 @@ class ProposalApprovalStep(models.Model):
     proposal = models.ForeignKey(Proposal, on_delete=models.CASCADE, related_name='approval_steps')
     level = models.PositiveIntegerField()
     approver = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='proposal_approvals')
-    status = models.CharField(max_length=20, choices=[('pending', 'Pending'), ('approved', 'Approved'), ('rejected', 'Rejected')], default='pending')
+    status = models.CharField(
+        max_length=20,
+        choices=[
+            ('pending', 'Pending'),
+            ('approved', 'Approved'),
+            ('rejected', 'Rejected'),
+            # Set on the downstream steps when an earlier approver rejects, so a
+            # later approver cannot act on (and un-reject) a dead chain.
+            ('cancelled', 'Cancelled'),
+        ],
+        default='pending',
+    )
     decided_at = models.DateTimeField(null=True, blank=True)
     comment = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

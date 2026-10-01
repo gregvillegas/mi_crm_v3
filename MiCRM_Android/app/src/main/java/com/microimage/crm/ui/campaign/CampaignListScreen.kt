@@ -128,7 +128,7 @@ fun CampaignListScreen(token: String, navController: NavController) {
 
     if (showPreviewDialog && previewData != null) {
         // Calculate the base URL for the WebView to resolve relative image paths
-        // If baseUrl is http://10.20.20.2:8001/api/v1/, we want http://10.20.20.2:8001/
+        // If baseUrl is https://micrm.microimageph.com/api/v1/, we want https://micrm.microimageph.com/
         val rootBaseUrl = RetrofitClient.baseUrl.substringBefore("/api/v1/") + "/"
 
         AlertDialog(

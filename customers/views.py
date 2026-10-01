@@ -4,6 +4,7 @@ from django.http import HttpResponse, JsonResponse
 from django.contrib import messages
 from django.db import models, transaction
 from django.db.models import Sum
+from django.core.paginator import Paginator
 from django.utils import timezone
 from .models import Customer, CustomerBackup, CustomerHistory, DelinquencyRecord, CustomerNote, CustomerContact, CustomerCreateRequest
 from .forms import CustomerForm, CustomerContactFormSet, SalespersonCustomerForm, SalespersonCustomerUpdateForm
@@ -217,9 +218,41 @@ def customer_list(request):
     # admin/gm/vp/marketing => all; avp => only their own team's requests.
     pending_create_count = pending_requests_for_reviewer(user).count()
 
+    # Stats are computed over the FULL filtered queryset (before pagination) so
+    # the summary cards always reflect every matching customer, not just the
+    # page currently on screen.
+    stats = {
+        'total': customers.count(),
+        'millionaire_count': customers.filter(is_millionaire_account=True).count(),
+        'active_count': customers.filter(is_active=True, auto_inactive_flag=False).count(),
+        'inactive_count': customers.filter(models.Q(is_active=False) | models.Q(auto_inactive_flag=True)).count(),
+    }
+
+    # Paginate the customer list. Long lists are hard to scroll, so we page the
+    # results. Page size can be overridden via ?per_page= (capped for safety).
+    try:
+        per_page = int(request.GET.get('per_page', 25))
+    except (TypeError, ValueError):
+        per_page = 25
+    per_page = max(10, min(per_page, 200))
+
+    paginator = Paginator(customers, per_page)
+    page_obj = paginator.get_page(request.GET.get('page'))
+
+    # Preserve all active filters (everything except 'page') so pagination
+    # links keep the current search/filter/view state.
+    querystring = request.GET.copy()
+    querystring.pop('page', None)
+    preserved_query = querystring.urlencode()
+
     # Get filter options for the template
     context = {
-        'customers': customers,
+        'customers': page_obj,
+        'page_obj': page_obj,
+        'paginator': paginator,
+        'is_paginated': page_obj.has_other_pages(),
+        'per_page': per_page,
+        'preserved_query': preserved_query,
         'view_mode': view_mode,
         'show_actions': can_manage_customers,
         'industry_choices': Customer.INDUSTRY_CHOICES,
@@ -240,13 +273,9 @@ def customer_list(request):
             'group': group_filter or '',
             'duplicates': duplicates_filter or '',
             'view': view_mode,
+            'per_page': per_page,
         },
-        'stats': {
-            'total': customers.count(),
-            'millionaire_count': customers.filter(is_millionaire_account=True).count(),
-            'active_count': customers.filter(is_active=True, auto_inactive_flag=False).count(),
-            'inactive_count': customers.filter(models.Q(is_active=False) | models.Q(auto_inactive_flag=True)).count(),
-        },
+        'stats': stats,
         'pending_create_count': pending_create_count,
         'duplicate_group_count': len(duplicate_groups),
     }

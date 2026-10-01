@@ -1,7 +1,15 @@
+from datetime import timedelta
+
+from django.conf import settings
 from django.test import TestCase, Client
 from django.urls import reverse
-from django.contrib.auth import get_user_model
+from django.utils import timezone
+from django.utils.module_loading import import_string
+from django.contrib.auth import authenticate, get_user_model
 from unittest.mock import patch, MagicMock
+
+from users.models import FailedLoginAttempt
+from users.signals import is_account_locked
 
 User = get_user_model()
 
@@ -123,3 +131,105 @@ class MFAIntegrationTestCase(TestCase):
         }, follow=True)
         # Should redirect to home or MFA verification
         self.assertIn(response.status_code, [200, 302])
+
+
+class LoginLockoutTestCase(TestCase):
+    """
+    Regression tests for the failed-login lockout.
+
+    The lockout was previously enforced on only one of the two configured
+    authentication backends. Because django.contrib.auth.authenticate() returns
+    the first backend that yields a user, the unguarded allauth backend still
+    authenticated locked accounts with a correct password.
+    """
+
+    PASSWORD = 'CorrectHorse!42'
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='victim',
+            email='victim@example.com',
+            password=self.PASSWORD,
+            role='salesperson',
+        )
+        self.client = Client()
+
+    def _exhaust_attempts(self, username='victim'):
+        limit = getattr(settings, 'MAX_FAILED_LOGIN_ATTEMPTS', 5)
+        for _ in range(limit + 1):
+            authenticate(request=None, username=username, password='wrong-password')
+        locked, _ = is_account_locked(username)
+        self.assertTrue(locked, 'precondition failed: account should be locked')
+
+    def test_every_configured_backend_enforces_the_lockout(self):
+        """No backend in the chain may authenticate a locked account."""
+        self._exhaust_attempts()
+        for path in settings.AUTHENTICATION_BACKENDS:
+            backend = import_string(path)()
+            self.assertIsNone(
+                backend.authenticate(None, username='victim', password=self.PASSWORD),
+                f'{path} authenticated a locked account',
+            )
+
+    def test_locked_account_rejected_with_correct_password(self):
+        self._exhaust_attempts()
+        self.assertIsNone(
+            authenticate(request=None, username='victim', password=self.PASSWORD)
+        )
+
+    def test_locked_account_cannot_log_in_via_web(self):
+        self._exhaust_attempts()
+        response = self.client.post(
+            reverse('account_login'),
+            {'login': 'victim', 'password': self.PASSWORD},
+        )
+        # Re-renders the form (200) rather than redirecting to the site on success.
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn('_auth_user_id', self.client.session)
+
+    def test_locked_account_cannot_obtain_api_token(self):
+        self._exhaust_attempts()
+        response = self.client.post(
+            '/api/v1/api-token-auth/',
+            {'username': 'victim', 'password': self.PASSWORD},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_unlocked_account_still_authenticates(self):
+        """The lockout must not break the normal path."""
+        self.assertEqual(
+            authenticate(request=None, username='victim', password=self.PASSWORD),
+            self.user,
+        )
+
+    def test_lockout_lifts_once_the_window_passes(self):
+        self._exhaust_attempts()
+        stale = timezone.now() - timedelta(
+            minutes=getattr(settings, 'FAILED_LOGIN_WINDOW_MINUTES', 15) + 1
+        )
+        FailedLoginAttempt.objects.filter(username='victim').update(timestamp=stale)
+        self.assertEqual(
+            authenticate(request=None, username='victim', password=self.PASSWORD),
+            self.user,
+        )
+
+
+class LogoutMethodTestCase(TestCase):
+    """Logout must be POST-only so third-party pages cannot force a logout."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='logoutuser', password='logoutpass123', email='lo@example.com'
+        )
+        self.client = Client()
+        self.client.force_login(self.user)
+
+    def test_get_logout_is_rejected(self):
+        response = self.client.get(reverse('logout'))
+        self.assertEqual(response.status_code, 405)
+        self.assertIn('_auth_user_id', self.client.session)
+
+    def test_post_logout_signs_the_user_out(self):
+        response = self.client.post(reverse('logout'))
+        self.assertEqual(response.status_code, 302)
+        self.assertNotIn('_auth_user_id', self.client.session)

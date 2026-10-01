@@ -546,12 +546,12 @@ def avp_dashboard(request):
             role='salesperson',
             is_active=True
         )
-        # Total quota: sum of salesperson quotas + supervisor monthly quota (if any)
+        # Total quota: sum of salesperson quotas + supervisor monthly quota.
+        # Supervisor quota falls back to the role default (₱200K) when unset.
         total_quota = TeamMembership.objects.filter(group=group).aggregate(total=Sum('quota'))['total'] or 0
         if supervisor:
             sup_quota = RoleMonthlyQuota.objects.filter(user=supervisor, month=month_start).first()
-            if sup_quota:
-                total_quota += sup_quota.amount
+            total_quota += sup_quota.amount if sup_quota else RoleMonthlyQuota.DEFAULT_AMOUNT
         # Actual profit for current month
         profit_data = SalesFunnel.objects.filter(
             salesperson__in=group_salespeople,
@@ -580,7 +580,7 @@ def avp_dashboard(request):
         if not supervisor:
             continue
         sup_quota_obj = RoleMonthlyQuota.objects.filter(user=supervisor, month=month_start).first()
-        sup_quota = sup_quota_obj.amount if sup_quota_obj else 0
+        sup_quota = sup_quota_obj.amount if sup_quota_obj else RoleMonthlyQuota.DEFAULT_AMOUNT
         # Supervisor achievement should reflect only supervisor-owned deals,
         # not the sum of their group's salesperson deals.
         if getattr(supervisor, 'role', None) == 'salesperson':
@@ -612,9 +612,9 @@ def avp_dashboard(request):
         asm_quota = 0
         if team.asm:
             asm_q = RoleMonthlyQuota.objects.filter(user=team.asm, month=month_start).first()
-            asm_quota = asm_q.amount if asm_q else 0
+            asm_quota = asm_q.amount if asm_q else RoleMonthlyQuota.DEFAULT_AMOUNT
         avp_q = RoleMonthlyQuota.objects.filter(user=user, month=month_start).first()
-        avp_quota = avp_q.amount if avp_q else 0
+        avp_quota = avp_q.amount if avp_q else RoleMonthlyQuota.DEFAULT_AMOUNT
         team_cards.append({'team': team, 'asm_quota': asm_quota, 'avp_quota': avp_quota})
 
     context = {
@@ -1267,8 +1267,7 @@ def team_performance(request):
             supervisor = group.get_manager()
             if supervisor:
                 sup_quota = RoleMonthlyQuota.objects.filter(user=supervisor, month=month_start).first()
-                if sup_quota:
-                    group_quota += sup_quota.amount
+                group_quota += sup_quota.amount if sup_quota else RoleMonthlyQuota.DEFAULT_AMOUNT
             
             # Group Profit is already summed up from salespeople above
             # But let's verify if we need to query again or just use the sum
@@ -1461,8 +1460,7 @@ def group_performance(request):
         from teams.models import RoleMonthlyQuota
         if supervisor:
             sup_quota = RoleMonthlyQuota.objects.filter(user=supervisor, month=month_start).first()
-            if sup_quota:
-                group_quota += sup_quota.amount
+            group_quota += sup_quota.amount if sup_quota else RoleMonthlyQuota.DEFAULT_AMOUNT
         
         # Group summary
         group_activities = activities.count()
@@ -1932,9 +1930,9 @@ def get_executive_dashboard_data():
         asm_quota = 0
         if team.asm:
             asm_q = RoleMonthlyQuota.objects.filter(user=team.asm, month=month_start).first()
-            asm_quota = asm_q.amount if asm_q else 0
+            asm_quota = asm_q.amount if asm_q else RoleMonthlyQuota.DEFAULT_AMOUNT
         avp_q = RoleMonthlyQuota.objects.filter(user=team.avp, month=month_start).first()
-        avp_quota = avp_q.amount if avp_q else 0
+        avp_quota = avp_q.amount if avp_q else RoleMonthlyQuota.DEFAULT_AMOUNT
         # Personal profits for ASM/AVP (if they own deals)
         asm_revenue_this_month = Decimal('0')
         avp_revenue_this_month = Decimal('0')
@@ -2038,8 +2036,7 @@ def get_executive_dashboard_data():
         total_quota = TeamMembership.objects.filter(group=group).aggregate(total=Sum('quota'))['total'] or Decimal('0')
         if supervisor:
             sup_quota = RoleMonthlyQuota.objects.filter(user=supervisor, month=month_start).first()
-            if sup_quota:
-                total_quota += sup_quota.amount
+            total_quota += sup_quota.amount if sup_quota else RoleMonthlyQuota.DEFAULT_AMOUNT
         progress_pct = float((actual_profit / total_quota * 100) if total_quota and total_quota > 0 else 0)
         status_color = 'success' if progress_pct >= 80 else 'warning' if progress_pct >= 60 else 'danger'
         group_achievements.append({
@@ -2054,13 +2051,19 @@ def get_executive_dashboard_data():
     
     # 3. Funnel Overview
     funnel_overview = []
+
+    # First pass: gather per-stage metrics and the grand total pipeline value.
+    # The grand total must be known before computing any percentage; computing
+    # it in the same loop (running total) makes each stage's "% of pipeline"
+    # relative to only the stages seen so far instead of the full pipeline.
+    stage_metrics = []
     total_pipeline_value = Decimal('0')
-    
+
     for stage_code, stage_name in SalesFunnel.FUNNEL_STAGES:
         stage_entries = active_pipeline.filter(stage=stage_code)
         stage_value = stage_entries.aggregate(total=Sum('retail'))['total'] or Decimal('0')
         total_pipeline_value += stage_value
-        
+
         # Calculate average age in days
         if stage_entries.exists():
             avg_age = stage_entries.aggregate(
@@ -2069,17 +2072,29 @@ def get_executive_dashboard_data():
             avg_age_days = avg_age.days if avg_age else 0
         else:
             avg_age_days = 0
-        
+
         # Aging indicator (red if > 30 days, yellow if > 14 days, green otherwise)
         aging_status = 'danger' if avg_age_days > 30 else 'warning' if avg_age_days > 14 else 'success'
-        
-        funnel_overview.append({
+
+        stage_metrics.append({
             'stage_code': stage_code,
             'stage_name': stage_name,
             'deal_count': stage_entries.count(),
-            'total_value': float(stage_value),
+            'stage_value': stage_value,
             'avg_age_days': avg_age_days,
             'aging_status': aging_status,
+        })
+
+    # Second pass: compute each stage's share of the full pipeline total.
+    for metric in stage_metrics:
+        stage_value = metric['stage_value']
+        funnel_overview.append({
+            'stage_code': metric['stage_code'],
+            'stage_name': metric['stage_name'],
+            'deal_count': metric['deal_count'],
+            'total_value': float(stage_value),
+            'avg_age_days': metric['avg_age_days'],
+            'aging_status': metric['aging_status'],
             'percentage': float((stage_value / total_pipeline_value) * 100) if total_pipeline_value > 0 else 0,
         })
     
@@ -2153,7 +2168,7 @@ def get_executive_dashboard_data():
         if not supervisor:
             continue
         sup_quota_obj = RoleMonthlyQuota.objects.filter(user=supervisor, month=month_start).first()
-        sup_quota = sup_quota_obj.amount if sup_quota_obj else Decimal('0')
+        sup_quota = sup_quota_obj.amount if sup_quota_obj else RoleMonthlyQuota.DEFAULT_AMOUNT
         # Supervisor's personal actual profit (own deals only)
         if getattr(supervisor, 'role', None) == 'salesperson':
             actual_profit = SalesFunnel.objects.filter(

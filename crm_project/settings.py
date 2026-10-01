@@ -184,9 +184,13 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # ---------------------------------------------------------------------------
 AUTH_USER_MODEL = 'users.User'
 
+# Both backends enforce the failed-login lockout. Do NOT swap either for its
+# un-wrapped upstream class: authenticate() returns the first backend that
+# yields a user, so an unguarded backend anywhere in this list defeats the
+# lockout entirely.
 AUTHENTICATION_BACKENDS = [
-    'users.backends.LockoutAwareBackend',        # brute force protection (replaces ModelBackend)
-    'allauth.account.auth_backends.AuthenticationBackend',
+    'users.backends.LockoutAwareBackend',           # ModelBackend + lockout
+    'users.backends.LockoutAwareAllauthBackend',    # allauth backend + lockout
 ]
 
 SITE_ID = 1

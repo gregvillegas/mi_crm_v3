@@ -1,3 +1,4 @@
+from decimal import Decimal
 from django.db import models
 from users.models import User
 
@@ -192,9 +193,14 @@ class AsmPersonalTarget(models.Model):
         ordering = ['-month']
 
 class RoleMonthlyQuota(models.Model):
+    # Default monthly quota (PHP) applied to supervisor/ASM/AVP roles when no
+    # explicit quota has been set for the month. Still fully editable per user
+    # per month via the "Edit Quota" action on the Executive Dashboard.
+    DEFAULT_AMOUNT = Decimal('200000.00')
+
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='role_monthly_quotas', limit_choices_to={'role__in': ['supervisor', 'asm', 'avp', 'gm', 'vp']})
     month = models.DateField()
-    amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    amount = models.DecimalField(max_digits=12, decimal_places=2, default=DEFAULT_AMOUNT)
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

@@ -9,11 +9,14 @@ from django.contrib.auth import views as auth_views
 from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework import routers
-from users.api import UserViewSet, CustomAuthToken
+from users.api import UserViewSet
+from crm_project.api_auth import CustomAuthToken, LogoutView, MfaAuthToken
 from crm_project.api_views import (
+    ActivityTypeViewSet,
     CampaignViewSet,
     CustomerCreateRequestViewSet,
     CustomerViewSet,
+    DashboardView,
     ProposalViewSet,
     SalesActivityViewSet,
     SalesFunnelViewSet,
@@ -27,12 +30,16 @@ router.register(r'customer-requests', CustomerCreateRequestViewSet, basename='cu
 router.register(r'funnel', SalesFunnelViewSet, basename='funnel')
 router.register(r'proposals', ProposalViewSet, basename='proposals')
 router.register(r'activities', SalesActivityViewSet, basename='activities')
+router.register(r'activity-types', ActivityTypeViewSet, basename='activity-types')
 router.register(r'campaigns', CampaignViewSet, basename='campaigns')
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/v1/', include(router.urls)),
-    path('api/v1/api-token-auth/', CustomAuthToken.as_view()),
+    path('api/v1/api-token-auth/', CustomAuthToken.as_view(), name='api-token-auth'),
+    path('api/v1/api-token-auth/mfa/', MfaAuthToken.as_view(), name='api-token-auth-mfa'),
+    path('api/v1/logout/', LogoutView.as_view(), name='api-logout'),
+    path('api/v1/dashboard/', DashboardView.as_view(), name='api-dashboard'),
     path('', home, name='home'),
     path('customers/', include('customers.urls')),
     path('users/', include('users.urls')), # <-- ADDED

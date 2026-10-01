@@ -122,29 +122,39 @@
 -->
     <style>
     .kpi-card small.kpi-label{white-space:nowrap;font-size:clamp(.65rem,1.6vw,.85rem)}
+    .kpi-stage-link{color:inherit;text-decoration:none;display:block;border-radius:.4rem;padding:.15rem 0;transition:background-color .15s ease;}
+    .kpi-stage-link:hover,.kpi-stage-link:focus{background-color:rgba(255,255,255,.15);color:#fff;}
     </style>
     <div class="col-lg-3 col-md-4 col-sm-6 mb-3">
         <div class="card bg-dark text-white kpi-card">
             <div class="card-body">
                 <div class="row text-center">
                     <div class="col-12">
-                        <small>Pipeline Stages</small>
+                        <small>Pipeline Stages <i class="fas fa-hand-pointer ms-1 opacity-75"></i></small>
                     </div>
                     <div class="col-3">
-                        <small class="kpi-label">PINK</small><br>
-                        <strong>{{ stats.quoted_count }}</strong>
+                        <a class="kpi-stage-link" href="{% url 'sales_funnel:stage_detail' 'quoted' %}" title="View all PINK (Newly Quoted) entries">
+                            <small class="kpi-label">PINK</small><br>
+                            <strong>{{ stats.quoted_count }}</strong>
+                        </a>
                     </div>
                     <div class="col-3">
-                        <small class="kpi-label">YELLOW</small><br>
-                        <strong>{{ stats.closable_count }}</strong>
+                        <a class="kpi-stage-link" href="{% url 'sales_funnel:stage_detail' 'closable' %}" title="View all YELLOW (Closable Deals) entries">
+                            <small class="kpi-label">YELLOW</small><br>
+                            <strong>{{ stats.closable_count }}</strong>
+                        </a>
                     </div>
                     <div class="col-3">
-                        <small class="kpi-label">GREEN</small><br>
-                        <strong>{{ stats.project_count }}</strong>
+                        <a class="kpi-stage-link" href="{% url 'sales_funnel:stage_detail' 'project' %}" title="View all GREEN entries">
+                            <small class="kpi-label">GREEN</small><br>
+                            <strong>{{ stats.project_count }}</strong>
+                        </a>
                     </div>
                     <div class="col-3">
-                        <small class="kpi-label">BLUE</small><br>
-                        <strong>{{ stats.services_count }}</strong>
+                        <a class="kpi-stage-link" href="{% url 'sales_funnel:stage_detail' 'services' %}" title="View all BLUE entries">
+                            <small class="kpi-label">BLUE</small><br>
+                            <strong>{{ stats.services_count }}</strong>
+                        </a>
                     </div>
                 </div>
             </div>

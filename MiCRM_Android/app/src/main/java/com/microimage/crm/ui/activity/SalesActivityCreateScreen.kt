@@ -14,6 +14,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.microimage.crm.api.RetrofitClient
+import com.microimage.crm.model.ActivityType
 import com.microimage.crm.model.CustomerSummary
 import com.microimage.crm.model.SalesActivityCreatePayload
 import kotlinx.coroutines.launch
@@ -28,16 +29,27 @@ fun SalesActivityCreateScreen(token: String, navController: NavController) {
     var customers by remember { mutableStateOf<List<CustomerSummary>>(emptyList()) }
     var selectedCustomer by remember { mutableStateOf<CustomerSummary?>(null) }
     var customerExpanded by remember { mutableStateOf(false) }
-    
+
+    var activityTypes by remember { mutableStateOf<List<ActivityType>>(emptyList()) }
+    var selectedType by remember { mutableStateOf<ActivityType?>(null) }
+    var typeExpanded by remember { mutableStateOf(false) }
+
     var title by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var scheduledDate by remember { mutableStateOf("") }
-    
+
     var isSubmitting by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         val res = RetrofitClient.apiService.getCustomers("Token $token")
         if (res.isSuccessful) customers = res.body() ?: emptyList()
+
+        // Activity types come from the server; this used to be hardcoded to id 1.
+        val typesRes = RetrofitClient.apiService.getActivityTypes("Token $token")
+        if (typesRes.isSuccessful) {
+            activityTypes = typesRes.body() ?: emptyList()
+            selectedType = activityTypes.firstOrNull()
+        }
     }
 
     Scaffold(
@@ -103,6 +115,34 @@ fun SalesActivityCreateScreen(token: String, navController: NavController) {
                 placeholder = { Text("2024-12-31") }
             )
 
+            ExposedDropdownMenuBox(
+                expanded = typeExpanded,
+                onExpandedChange = { typeExpanded = !typeExpanded }
+            ) {
+                OutlinedTextField(
+                    value = selectedType?.name ?: "Select activity type",
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Activity Type") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = typeExpanded) },
+                    modifier = Modifier.menuAnchor().fillMaxWidth()
+                )
+                ExposedDropdownMenu(
+                    expanded = typeExpanded,
+                    onDismissRequest = { typeExpanded = false }
+                ) {
+                    activityTypes.forEach { type ->
+                        DropdownMenuItem(
+                            text = { Text(type.name) },
+                            onClick = {
+                                selectedType = type
+                                typeExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+
             OutlinedTextField(
                 value = description,
                 onValueChange = { description = it },
@@ -117,6 +157,11 @@ fun SalesActivityCreateScreen(token: String, navController: NavController) {
                         Toast.makeText(context, "Title is required", Toast.LENGTH_SHORT).show()
                         return@Button
                     }
+                    val typeId = selectedType?.id
+                    if (typeId == null) {
+                        Toast.makeText(context, "Select an activity type", Toast.LENGTH_SHORT).show()
+                        return@Button
+                    }
                     isSubmitting = true
                     scope.launch {
                         try {
@@ -125,12 +170,18 @@ fun SalesActivityCreateScreen(token: String, navController: NavController) {
                                 description = description,
                                 customer = selectedCustomer?.id,
                                 scheduledStart = scheduledDate.takeIf { it.isNotBlank() },
-                                activityType = 1 // Default to first type for now
+                                activityType = typeId
                             )
                             val res = RetrofitClient.apiService.createSalesActivity("Token $token", payload)
                             if (res.isSuccessful) {
                                 Toast.makeText(context, "Activity Logged", Toast.LENGTH_SHORT).show()
                                 navController.popBackStack()
+                            } else {
+                                Toast.makeText(
+                                    context,
+                                    "Could not save activity (${res.code()})",
+                                    Toast.LENGTH_LONG
+                                ).show()
                             }
                         } catch (e: Exception) {
                             Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()

@@ -1823,6 +1823,9 @@ def approvals_inbox(request):
 @login_required
 def approve_proposal(request, pk):
     proposal = get_object_or_404(Proposal, pk=pk)
+    if proposal.approval_status == 'rejected':
+        messages.error(request, 'This proposal was already rejected and cannot be approved.')
+        return redirect('proposal_detail', pk=pk)
     current_step = proposal.get_current_pending_step()
     step = ProposalApprovalStep.objects.filter(
         proposal=proposal,
@@ -1884,6 +1887,11 @@ def reject_proposal(request, pk):
         step.save()
         proposal.approval_status = 'rejected'
         proposal.save()
+        # Close the rest of the chain so a later approver cannot act on — and
+        # thereby un-reject — this proposal.
+        ProposalApprovalStep.objects.filter(
+            proposal=proposal, status='pending'
+        ).update(status='cancelled', decided_at=timezone.now())
         # Notify the salesperson their proposal was rejected (with the reason).
         notify_creator_of_decision(
             proposal, 'rejected', decided_by=request.user,

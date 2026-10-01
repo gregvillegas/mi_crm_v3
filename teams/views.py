@@ -388,7 +388,10 @@ def update_role_quota(request, user_id):
     today = timezone.now().date()
     month_start = today.replace(day=1)
     from .models import RoleMonthlyQuota
-    quota, _ = RoleMonthlyQuota.objects.get_or_create(user=target_user, month=month_start, defaults={'amount': 0})
+    quota, _ = RoleMonthlyQuota.objects.get_or_create(
+        user=target_user, month=month_start,
+        defaults={'amount': RoleMonthlyQuota.DEFAULT_AMOUNT},
+    )
     if request.method == 'POST':
         form = RoleMonthlyQuotaForm(request.POST, instance=quota)
         if form.is_valid():

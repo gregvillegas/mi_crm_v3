@@ -30,110 +30,41 @@ from teams.models import Group, Team, TeamMembership
 from users.models import User
 
 
-EXEC_ROLES = {'admin', 'president', 'gm', 'vp'}
-MANAGER_ROLES = EXEC_ROLES | {'avp', 'asm', 'supervisor', 'teamlead'}
+from crm_project.scoping import (  # noqa: E402  (kept here for import-order clarity)
+    SALES_GLOBAL_ROLES as EXEC_ROLES,
+    scoped_user_ids,
+    visible_activity_queryset,
+    visible_customer_queryset,
+    visible_proposal_queryset,
+)
+
+MANAGER_ROLES = EXEC_ROLES | {'avp', 'asm', 'sm', 'supervisor', 'teamlead'}
 
 
+# These three used to hand-roll their own role rules, which drifted from the
+# web app's (see crm_project/scoping.py). They are now thin aliases so there is
+# exactly one implementation to keep correct.
 def get_visible_customer_queryset(user):
-    if user.role in EXEC_ROLES or user.role == 'avp':
-        return Customer.objects.all()
-    if user.role == 'salesperson':
-        return Customer.objects.filter(salesperson=user)
-    if user.role == 'supervisor':
-        groups = Group.objects.filter(supervisor=user)
-        salesperson_ids = TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True)
-        return Customer.objects.filter(Q(salesperson_id__in=salesperson_ids) | Q(salesperson=user))
-    if user.role == 'teamlead':
-        groups = Group.objects.filter(teamlead=user)
-        salesperson_ids = TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True)
-        return Customer.objects.filter(Q(salesperson_id__in=salesperson_ids) | Q(salesperson=user))
-    if user.role == 'asm':
-        groups = Group.objects.filter(team__in=user.asm_teams.all())
-        salesperson_ids = TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True)
-        return Customer.objects.filter(Q(salesperson_id__in=salesperson_ids) | Q(salesperson=user))
-    return Customer.objects.none()
+    return visible_customer_queryset(user)
 
 
 def get_visible_proposal_queryset(user):
-    if user.role in EXEC_ROLES:
-        return Proposal.objects.all()
-    if user.role == 'salesperson':
-        return Proposal.objects.filter(created_by=user)
-    if user.role == 'supervisor':
-        managed_groups = user.managed_groups.all()
-        member_ids = []
-        for group in managed_groups:
-            member_ids.extend(group.members.values_list('user_id', flat=True))
-        member_ids.append(user.id)
-        return Proposal.objects.filter(created_by_id__in=member_ids)
-    if user.role == 'teamlead':
-        led_groups = user.led_groups.all()
-        member_ids = []
-        for group in led_groups:
-            member_ids.extend(group.members.values_list('user_id', flat=True))
-        member_ids.append(user.id)
-        return Proposal.objects.filter(created_by_id__in=member_ids)
-    if user.role == 'asm':
-        member_ids = []
-        for team in user.asm_teams.all():
-            for group in team.groups.all():
-                member_ids.extend(group.members.values_list('user_id', flat=True))
-                if group.supervisor:
-                    member_ids.append(group.supervisor.id)
-        member_ids.append(user.id)
-        return Proposal.objects.filter(created_by_id__in=member_ids)
-    if user.role == 'avp':
-        member_ids = []
-        for team in Team.objects.filter(avp=user):
-            for group in team.groups.all():
-                member_ids.extend(group.members.values_list('user_id', flat=True))
-                if group.supervisor:
-                    member_ids.append(group.supervisor.id)
-        member_ids.append(user.id)
-        return Proposal.objects.filter(created_by_id__in=member_ids)
-    return Proposal.objects.none()
+    return visible_proposal_queryset(user)
 
 
 def get_visible_activity_queryset(user):
-    if user.role in EXEC_ROLES or user.role == 'avp':
-        return SalesActivity.objects.all()
-    if user.role == 'salesperson':
-        return SalesActivity.objects.filter(salesperson=user)
-    if user.role == 'supervisor':
-        groups = user.managed_groups.all()
-        salesperson_ids = TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True)
-        return SalesActivity.objects.filter(salesperson_id__in=salesperson_ids)
-    if user.role == 'teamlead':
-        groups = user.led_groups.all()
-        salesperson_ids = TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True)
-        return SalesActivity.objects.filter(salesperson_id__in=salesperson_ids)
-    if user.role == 'asm':
-        groups = Group.objects.filter(team__in=user.asm_teams.all())
-        salesperson_ids = TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True)
-        return SalesActivity.objects.filter(salesperson_id__in=salesperson_ids)
-    return SalesActivity.objects.none()
+    return visible_activity_queryset(user)
 
 
 def get_assignable_salespeople_queryset(user):
-    if user.role in EXEC_ROLES:
-        return User.objects.filter(role='salesperson', is_active=True)
-    if user.role == 'supervisor':
-        groups = user.managed_groups.all()
-        salesperson_ids = TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True)
-        return User.objects.filter(id__in=salesperson_ids, is_active=True)
-    if user.role == 'teamlead':
-        groups = user.led_groups.all()
-        salesperson_ids = TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True)
-        return User.objects.filter(id__in=salesperson_ids, is_active=True)
-    if user.role == 'asm':
-        groups = Group.objects.filter(team__in=user.asm_teams.all())
-        salesperson_ids = TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True)
-        return User.objects.filter(id__in=salesperson_ids, is_active=True)
-    if user.role == 'avp':
-        groups = Group.objects.filter(team__in=Team.objects.filter(avp=user))
-        salesperson_ids = TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True)
-        return User.objects.filter(id__in=salesperson_ids, is_active=True)
-    return User.objects.none()
+    """Salespeople this user may assign work to — same scope as what they can see."""
+    ids = scoped_user_ids(user)
+    qs = User.objects.filter(role='salesperson', is_active=True)
+    if ids is None:
+        return qs
+    if not ids:
+        return User.objects.none()
+    return qs.filter(id__in=ids)
 
 
 class CustomerContactSerializer(serializers.ModelSerializer):
@@ -763,6 +694,68 @@ class SalesActivityCreateSerializer(serializers.ModelSerializer):
             description=f'Activity "{activity.title}" was created',
             changed_by=request.user,
         )
+        return activity
+
+
+class SalesActivityUpdateSerializer(serializers.ModelSerializer):
+    """
+    Partial update from mobile.
+
+    Deliberately narrower than the create serializer: reassigning an activity to
+    a different salesperson or customer is a desk-bound operation, so those keys
+    are not editable here. Every change is written to the ActivityLog, matching
+    the audit convention the web views follow.
+    """
+
+    class Meta:
+        model = SalesActivity
+        fields = [
+            'title',
+            'description',
+            'status',
+            'priority',
+            'scheduled_start',
+            'scheduled_end',
+            'actual_start',
+            'actual_end',
+            'notes',
+            'follow_up_required',
+            'follow_up_date',
+        ]
+
+    def validate(self, attrs):
+        start = attrs.get('scheduled_start', getattr(self.instance, 'scheduled_start', None))
+        end = attrs.get('scheduled_end', getattr(self.instance, 'scheduled_end', None))
+        if start and end and end <= start:
+            raise serializers.ValidationError({'scheduled_end': 'End time must be after start time.'})
+
+        follow_up_required = attrs.get(
+            'follow_up_required', getattr(self.instance, 'follow_up_required', False)
+        )
+        follow_up_date = attrs.get(
+            'follow_up_date', getattr(self.instance, 'follow_up_date', None)
+        )
+        if follow_up_required and not follow_up_date:
+            raise serializers.ValidationError(
+                {'follow_up_date': 'Follow-up date is required when follow-up is marked as required.'}
+            )
+        return attrs
+
+    def update(self, instance, validated_data):
+        changed = [
+            field for field, value in validated_data.items()
+            if getattr(instance, field) != value
+        ]
+        activity = super().update(instance, validated_data)
+
+        if changed:
+            request = self.context.get('request')
+            ActivityLog.log_activity_change(
+                activity=activity,
+                action='updated',
+                description=f"Updated from mobile: {', '.join(sorted(changed))}",
+                changed_by=request.user if request else None,
+            )
         return activity
 
 

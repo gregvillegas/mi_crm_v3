@@ -6,6 +6,7 @@ app_name = 'sales_funnel'
 urlpatterns = [
     # Main dashboard
     path('', views.funnel_dashboard, name='dashboard'),
+    path('stage/<str:stage>/', views.funnel_stage_detail, name='stage_detail'),
     path('export/', views.export_funnel_report, name='export'),
     
     # Entry management (CRUD)

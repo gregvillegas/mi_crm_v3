@@ -11,16 +11,37 @@ data class User(
     @SerializedName("role") val role: String
 )
 
+/**
+ * Response to POST api-token-auth/.
+ *
+ * Two shapes share this type: a completed sign-in carries [token], while an
+ * account with MFA enrolled carries [mfaRequired] + [mfaToken] and no token —
+ * the caller must then post the authenticator code to api-token-auth/mfa/.
+ */
 data class LoginResponse(
-    @SerializedName("token") val token: String,
-    @SerializedName("user_id") val userId: Int,
-    @SerializedName("email") val email: String,
-    @SerializedName("role") val role: String
+    @SerializedName("token") val token: String? = null,
+    @SerializedName("user_id") val userId: Int? = null,
+    @SerializedName("username") val username: String? = null,
+    @SerializedName("email") val email: String? = null,
+    @SerializedName("first_name") val firstName: String? = null,
+    @SerializedName("last_name") val lastName: String? = null,
+    @SerializedName("role") val role: String? = null,
+    @SerializedName("role_display") val roleDisplay: String? = null,
+    @SerializedName("mfa_required") val mfaRequired: Boolean = false,
+    @SerializedName("mfa_token") val mfaToken: String? = null,
+    @SerializedName("mfa_setup_required") val mfaSetupRequired: Boolean = false,
+    @SerializedName("setup_url") val setupUrl: String? = null,
+    @SerializedName("detail") val detail: String? = null
 )
 
 data class LoginRequest(
     @SerializedName("username") val username: String,
     @SerializedName("password") val password: String
+)
+
+data class MfaVerifyRequest(
+    @SerializedName("mfa_token") val mfaToken: String,
+    @SerializedName("code") val code: String
 )
 
 data class SalesFunnel(
@@ -240,4 +261,96 @@ data class CampaignPreview(
 
 data class ApiMessage(
     @SerializedName("detail") val detail: String
+)
+
+// ---------------------------------------------------------------------------
+// Dashboard
+//
+// The home screen used to download the full funnel, proposal and activity lists
+// and reduce them on-device. GET dashboard/ returns these pre-aggregated and
+// already scoped to the signed-in user's role.
+// ---------------------------------------------------------------------------
+
+data class DashboardUser(
+    @SerializedName("id") val id: Int,
+    @SerializedName("name") val name: String,
+    @SerializedName("role") val role: String,
+    @SerializedName("role_display") val roleDisplay: String,
+    @SerializedName("initials") val initials: String
+)
+
+data class CustomerStats(
+    @SerializedName("total") val total: Int = 0,
+    @SerializedName("active") val active: Int = 0,
+    @SerializedName("vip") val vip: Int = 0,
+    @SerializedName("needs_attention") val needsAttention: Int = 0
+)
+
+data class FunnelStage(
+    @SerializedName("stage") val stage: String,
+    @SerializedName("label") val label: String,
+    @SerializedName("count") val count: Int = 0,
+    @SerializedName("value") val value: Double = 0.0
+)
+
+data class FunnelStats(
+    @SerializedName("stages") val stages: List<FunnelStage> = emptyList(),
+    @SerializedName("total_value") val totalValue: Double = 0.0,
+    @SerializedName("total_count") val totalCount: Int = 0
+)
+
+data class ProposalStats(
+    @SerializedName("total") val total: Int = 0,
+    @SerializedName("this_month") val thisMonth: Int = 0,
+    @SerializedName("awaiting_approval") val awaitingApproval: Int = 0,
+    @SerializedName("approved") val approved: Int = 0,
+    @SerializedName("my_pending_approvals") val myPendingApprovals: Int = 0
+)
+
+data class ActivityStats(
+    @SerializedName("total") val total: Int = 0,
+    @SerializedName("this_month") val thisMonth: Int = 0,
+    @SerializedName("completed_this_month") val completedThisMonth: Int = 0,
+    @SerializedName("upcoming") val upcoming: Int = 0,
+    @SerializedName("overdue") val overdue: Int = 0
+)
+
+data class CustomerRequestStats(
+    @SerializedName("mine_pending") val minePending: Int = 0,
+    @SerializedName("awaiting_my_review") val awaitingMyReview: Int = 0
+)
+
+data class DashboardSummary(
+    @SerializedName("user") val user: DashboardUser,
+    @SerializedName("customers") val customers: CustomerStats,
+    @SerializedName("funnel") val funnel: FunnelStats,
+    @SerializedName("proposals") val proposals: ProposalStats,
+    @SerializedName("activities") val activities: ActivityStats,
+    @SerializedName("customer_requests") val customerRequests: CustomerRequestStats,
+    @SerializedName("upcoming_activities") val upcomingActivities: List<SalesActivity> = emptyList(),
+    @SerializedName("recent_proposals") val recentProposals: List<Proposal> = emptyList()
+)
+
+data class ChoiceOption(
+    @SerializedName("value") val value: String,
+    @SerializedName("label") val label: String
+)
+
+data class CustomerChoices(
+    @SerializedName("industries") val industries: List<ChoiceOption> = emptyList(),
+    @SerializedName("territories") val territories: List<ChoiceOption> = emptyList()
+)
+
+data class ActivityCompletePayload(
+    @SerializedName("notes") val notes: String? = null
+)
+
+data class ActivityUpdatePayload(
+    @SerializedName("title") val title: String? = null,
+    @SerializedName("description") val description: String? = null,
+    @SerializedName("status") val status: String? = null,
+    @SerializedName("priority") val priority: String? = null,
+    @SerializedName("scheduled_start") val scheduledStart: String? = null,
+    @SerializedName("scheduled_end") val scheduledEnd: String? = null,
+    @SerializedName("notes") val notes: String? = null
 )

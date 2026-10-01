@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.microimage.crm.api.RetrofitClient
 import com.microimage.crm.model.LoginRequest
+import com.microimage.crm.model.MfaVerifyRequest
 import com.microimage.crm.ui.theme.MiBgGradientEnd
 import com.microimage.crm.ui.theme.MiBgGradientStart
 import com.microimage.crm.ui.theme.MiRed
@@ -34,14 +35,53 @@ import kotlinx.coroutines.launch
 fun LoginScreen(onLoginSuccess: (String) -> Unit) {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    var serverAddress by remember { mutableStateOf("10.20.20.2:8001") }
+    var serverAddress by remember { mutableStateOf(RetrofitClient.DEFAULT_HOST) }
     var passwordVisible by remember { mutableStateOf(false) }
     var keepSignedIn by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
     var showServerSettings by remember { mutableStateOf(false) }
-    
+
+    // Second-factor step. Non-null mfaToken means the password was accepted and
+    // the server is waiting for an authenticator code.
+    var mfaToken by remember { mutableStateOf<String?>(null) }
+    var mfaCode by remember { mutableStateOf("") }
+    var mfaError by remember { mutableStateOf<String?>(null) }
+    var isVerifying by remember { mutableStateOf(false) }
+
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+
+    mfaToken?.let { pendingToken ->
+        MfaCodeDialog(
+            code = mfaCode,
+            onCodeChange = { mfaCode = it.filter(Char::isDigit).take(8); mfaError = null },
+            errorMessage = mfaError,
+            isVerifying = isVerifying,
+            onDismiss = { mfaToken = null; mfaCode = ""; mfaError = null },
+            onSubmit = {
+                isVerifying = true
+                scope.launch {
+                    try {
+                        val response = RetrofitClient.apiService.verifyMfa(
+                            MfaVerifyRequest(pendingToken, mfaCode)
+                        )
+                        val token = response.body()?.token
+                        if (response.isSuccessful && token != null) {
+                            mfaToken = null
+                            onLoginSuccess(token)
+                        } else {
+                            mfaError = response.body()?.detail
+                                ?: "That code is not valid. Please try again."
+                        }
+                    } catch (e: Exception) {
+                        mfaError = "Connection error: ${e.message}"
+                    } finally {
+                        isVerifying = false
+                    }
+                }
+            }
+        )
+    }
 
     Box(
         modifier = Modifier
@@ -83,7 +123,7 @@ fun LoginScreen(onLoginSuccess: (String) -> Unit) {
 
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                "Precision Enterprise Architecture",
+                "Micro Image International Corp.",
                 fontWeight = FontWeight.Bold,
                 fontSize = 18.sp,
                 color = Color.Black
@@ -201,10 +241,28 @@ fun LoginScreen(onLoginSuccess: (String) -> Unit) {
                             scope.launch {
                                 try {
                                     val response = RetrofitClient.apiService.login(LoginRequest(username, password))
-                                    if (response.isSuccessful && response.body() != null) {
-                                        onLoginSuccess(response.body()!!.token)
-                                    } else {
-                                        Toast.makeText(context, "Login Failed: ${response.code()}", Toast.LENGTH_SHORT).show()
+                                    val body = response.body()
+                                    when {
+                                        // Account has MFA — ask for the authenticator code.
+                                        response.isSuccessful && body?.mfaRequired == true && body.mfaToken != null -> {
+                                            mfaToken = body.mfaToken
+                                            mfaCode = ""
+                                            mfaError = null
+                                        }
+                                        response.isSuccessful && body?.token != null -> {
+                                            onLoginSuccess(body.token)
+                                        }
+                                        // Site requires MFA but this account has not enrolled yet.
+                                        response.code() == 403 -> {
+                                            Toast.makeText(
+                                                context,
+                                                "Two-factor authentication must be set up on the CRM website first.",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        }
+                                        else -> {
+                                            Toast.makeText(context, "Login Failed: ${response.code()}", Toast.LENGTH_SHORT).show()
+                                        }
                                     }
                                 } catch (e: Exception) {
                                     Toast.makeText(context, "Connection Error: ${e.message}", Toast.LENGTH_LONG).show()
@@ -285,4 +343,61 @@ fun BottomOptionButton(icon: ImageVector, label: String, modifier: Modifier = Mo
             Text(label, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF795548))
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MfaCodeDialog(
+    code: String,
+    onCodeChange: (String) -> Unit,
+    errorMessage: String?,
+    isVerifying: Boolean,
+    onDismiss: () -> Unit,
+    onSubmit: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = { if (!isVerifying) onDismiss() },
+        icon = { Icon(Icons.Default.Shield, contentDescription = null, tint = MiRed) },
+        title = { Text("Two-Factor Authentication", fontWeight = FontWeight.Bold) },
+        text = {
+            Column {
+                Text(
+                    "Enter the 6-digit code from your authenticator app. " +
+                        "You can also use one of your recovery codes.",
+                    fontSize = 14.sp,
+                    color = Color.Gray
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                OutlinedTextField(
+                    value = code,
+                    onValueChange = onCodeChange,
+                    label = { Text("Authentication code") },
+                    singleLine = true,
+                    isError = errorMessage != null,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (errorMessage != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(errorMessage, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onSubmit,
+                enabled = !isVerifying && code.length >= 6,
+                colors = ButtonDefaults.buttonColors(containerColor = MiRed)
+            ) {
+                if (isVerifying) {
+                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(18.dp))
+                } else {
+                    Text("Verify")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !isVerifying) { Text("Cancel") }
+        }
+    )
 }

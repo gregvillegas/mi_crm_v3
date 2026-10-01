@@ -162,14 +162,25 @@ class ProposalForm(forms.ModelForm):
 
 
 class ProposalItemForm(forms.ModelForm):
+    # Declare the price fields as plain text so comma-formatted display values
+    # (e.g. "2,000.00") are accepted. The DecimalField auto-generated from the
+    # model runs to_python() during field validation and rejects commas with
+    # "Enter a number." before our comma-stripping clean_* methods ever run.
+    # Using CharField lets clean_unit_cost/clean_unit_price own the conversion.
+    unit_cost = forms.CharField(
+        required=False,
+        widget=TextInput(attrs={'class': 'price-input no-spin', 'inputmode': 'decimal', 'autocomplete': 'off'}),
+    )
+    unit_price = forms.CharField(
+        widget=TextInput(attrs={'class': 'price-input no-spin', 'inputmode': 'decimal', 'autocomplete': 'off'}),
+    )
+
     class Meta:
         model = ProposalItem
         fields = ['part_number', 'description', 'quantity', 'unit_cost', 'unit_price', 'warranty', 'is_optional', 'is_bundle', 'bundled_items']
         widgets = {
             'description': Textarea(attrs={'rows': 3}),
             'quantity': NumberInput(attrs={'class': 'no-spin', 'step': '1', 'min': '1', 'inputmode': 'numeric'}),
-            'unit_cost': TextInput(attrs={'class': 'price-input no-spin', 'inputmode': 'decimal', 'autocomplete': 'off'}),
-            'unit_price': TextInput(attrs={'class': 'price-input no-spin', 'inputmode': 'decimal', 'autocomplete': 'off'}),
             'warranty': TextInput(attrs={
                 'class': 'form-control',
                 'maxlength': ProposalItem.AVAILABILITY_WARRANTY_MAX_LENGTH,

@@ -18,28 +18,63 @@ import com.microimage.crm.model.CustomerRequest
 import com.microimage.crm.model.CampaignSummary
 import com.microimage.crm.model.CampaignPreview
 import com.microimage.crm.model.ApiMessage
+import com.microimage.crm.model.ActivityCompletePayload
+import com.microimage.crm.model.ActivityType
+import com.microimage.crm.model.ActivityUpdatePayload
+import com.microimage.crm.model.CustomerChoices
+import com.microimage.crm.model.DashboardSummary
+import com.microimage.crm.model.MfaVerifyRequest
+import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.Header
+import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.Path
+import retrofit2.http.Query
+import retrofit2.http.Streaming
 
 interface ApiService {
     @POST("api-token-auth/")
     suspend fun login(@Body request: LoginRequest): Response<LoginResponse>
 
+    /** Second leg of an MFA sign-in: trade the interim token + TOTP code for an API token. */
+    @POST("api-token-auth/mfa/")
+    suspend fun verifyMfa(@Body request: MfaVerifyRequest): Response<LoginResponse>
+
+    /** Revokes the API token server-side. */
+    @POST("logout/")
+    suspend fun logout(@Header("Authorization") token: String): Response<ApiMessage>
+
     @GET("users/me/")
     suspend fun getCurrentUser(@Header("Authorization") token: String): Response<User>
 
+    @GET("dashboard/")
+    suspend fun getDashboard(@Header("Authorization") token: String): Response<DashboardSummary>
+
     @GET("funnel/")
-    suspend fun getSalesFunnel(@Header("Authorization") token: String): Response<List<SalesFunnel>>
+    suspend fun getSalesFunnel(
+        @Header("Authorization") token: String,
+        @Query("stage") stage: String? = null
+    ): Response<List<SalesFunnel>>
 
     @GET("customers/")
-    suspend fun getCustomers(@Header("Authorization") token: String): Response<List<CustomerSummary>>
+    suspend fun getCustomers(
+        @Header("Authorization") token: String,
+        @Query("search") search: String? = null,
+        @Query("industry") industry: String? = null,
+        @Query("territory") territory: String? = null
+    ): Response<List<CustomerSummary>>
 
     @GET("customers/mine/")
-    suspend fun getMyCustomers(@Header("Authorization") token: String): Response<List<CustomerSummary>>
+    suspend fun getMyCustomers(
+        @Header("Authorization") token: String,
+        @Query("search") search: String? = null
+    ): Response<List<CustomerSummary>>
+
+    @GET("customers/choices/")
+    suspend fun getCustomerChoices(@Header("Authorization") token: String): Response<CustomerChoices>
 
     @GET("customers/{id}/")
     suspend fun getCustomerDetail(
@@ -73,7 +108,19 @@ interface ApiService {
     ): Response<Map<String, Any>>
 
     @GET("proposals/")
-    suspend fun getProposals(@Header("Authorization") token: String): Response<List<Proposal>>
+    suspend fun getProposals(
+        @Header("Authorization") token: String,
+        @Query("search") search: String? = null,
+        @Query("approval_status") approvalStatus: String? = null
+    ): Response<List<Proposal>>
+
+    /** Streams the rendered quotation PDF. */
+    @Streaming
+    @GET("proposals/{id}/pdf/")
+    suspend fun downloadProposalPdf(
+        @Header("Authorization") token: String,
+        @Path("id") proposalId: Int
+    ): Response<ResponseBody>
 
     @GET("proposals/{id}/")
     suspend fun getProposalDetail(
@@ -105,13 +152,46 @@ interface ApiService {
     ): Response<Map<String, Any>>
 
     @GET("activities/")
-    suspend fun getSalesActivities(@Header("Authorization") token: String): Response<List<SalesActivity>>
+    suspend fun getSalesActivities(
+        @Header("Authorization") token: String,
+        @Query("status") status: String? = null,
+        @Query("customer") customerId: Int? = null,
+        @Query("upcoming") upcoming: Boolean? = null,
+        @Query("mine") mine: Boolean? = null
+    ): Response<List<SalesActivity>>
+
+    @GET("activities/{id}/")
+    suspend fun getSalesActivityDetail(
+        @Header("Authorization") token: String,
+        @Path("id") activityId: Int
+    ): Response<SalesActivity>
 
     @POST("activities/")
     suspend fun createSalesActivity(
         @Header("Authorization") token: String,
         @Body request: SalesActivityCreatePayload
     ): Response<SalesActivity>
+
+    @PATCH("activities/{id}/")
+    suspend fun updateSalesActivity(
+        @Header("Authorization") token: String,
+        @Path("id") activityId: Int,
+        @Body request: ActivityUpdatePayload
+    ): Response<SalesActivity>
+
+    @POST("activities/{id}/complete/")
+    suspend fun completeSalesActivity(
+        @Header("Authorization") token: String,
+        @Path("id") activityId: Int,
+        @Body request: ActivityCompletePayload
+    ): Response<SalesActivity>
+
+    /**
+     * Activity types for the create form. Without this the create screen
+     * hardcoded `activityType = 1`.
+     */
+    @GET("activity-types/")
+    suspend fun getActivityTypes(@Header("Authorization") token: String): Response<List<ActivityType>>
 
     @GET("campaigns/")
     suspend fun getCampaigns(@Header("Authorization") token: String): Response<List<CampaignSummary>>

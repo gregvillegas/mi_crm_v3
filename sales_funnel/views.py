@@ -132,6 +132,92 @@ def can_add_entry(user):
 def can_import_entries(user):
     return user.role in ['salesperson', 'supervisor', 'asm', 'sm', 'avp', 'admin']
 
+
+# Maps the funnel stage DB codes to their display color name used across the UI
+# (Pink/Yellow/Green/Blue) plus the hex/badge color. Single source of truth so
+# the dashboard KPI card and the per-stage pages stay consistent.
+FUNNEL_STAGE_META = {
+    'quoted':   {'label': 'PINK',   'name': 'Newly Quoted',   'hex': '#e91e63', 'badge': 'danger'},
+    'closable': {'label': 'YELLOW', 'name': 'Closable Deals', 'hex': '#ffc107', 'badge': 'warning'},
+    'project':  {'label': 'GREEN',  'name': 'Green Funnel',   'hex': '#28a745', 'badge': 'success'},
+    'services': {'label': 'BLUE',   'name': 'Blue Funnel',    'hex': '#007bff', 'badge': 'primary'},
+}
+
+
+def visible_funnel_entries(user):
+    """
+    Return the active, open funnel entries a user is allowed to see, applying the
+    same role-based scoping used by the dashboard. Centralized here so the
+    dashboard and the per-stage pages share one source of truth for visibility.
+    """
+    base = SalesFunnel.objects.filter(is_active=True, is_closed=False)
+
+    if user.role == 'salesperson':
+        return base.filter(salesperson=user)
+    if user.role == 'supervisor':
+        groups = Group.objects.filter(supervisor=user)
+        sp_ids = TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True)
+        return base.filter(Q(salesperson_id__in=sp_ids) | Q(salesperson=user))
+    if user.role == 'teamlead':
+        groups = Group.objects.filter(teamlead=user)
+        sp_ids = TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True)
+        return base.filter(salesperson_id__in=sp_ids)
+    if user.role == 'asm':
+        groups = asm_scoped_groups(user)
+        sp_ids = list(TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True))
+        supervisor_ids = list(groups.filter(supervisor__isnull=False).values_list('supervisor_id', flat=True))
+        return base.filter(Q(salesperson_id__in=sp_ids + supervisor_ids) | Q(salesperson=user))
+    if user.role == 'sm':
+        groups = user.sm_groups.all()
+        sp_ids = list(TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True))
+        supervisor_ids = list(Group.objects.filter(id__in=groups.values_list('id', flat=True), supervisor__isnull=False).values_list('supervisor_id', flat=True))
+        return base.filter(Q(salesperson_id__in=sp_ids + supervisor_ids) | Q(salesperson=user))
+    if user.role == 'avp':
+        teams = Team.objects.filter(avp=user)
+        groups = Group.objects.filter(team__in=teams)
+        sp_ids = list(TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True))
+        asm_ids = list(teams.exclude(asm__isnull=True).values_list('asm_id', flat=True))
+        supervisor_ids = list(Group.objects.filter(team__in=teams, supervisor__isnull=False).values_list('supervisor_id', flat=True))
+        return base.filter(Q(salesperson_id__in=sp_ids + asm_ids + supervisor_ids) | Q(salesperson=user))
+    # Executives and admins can see all entries
+    return base
+
+
+@login_required
+@user_passes_test(can_access_funnel)
+def funnel_stage_detail(request, stage):
+    """
+    Focused page listing all visible entries for a single funnel stage
+    (PINK/YELLOW/GREEN/BLUE). Reached by clicking a stage in the dashboard's
+    Pipeline Stages card. Includes a Back to Dashboard button.
+    """
+    if stage not in FUNNEL_STAGE_META:
+        messages.error(request, 'Unknown funnel stage.')
+        return redirect('sales_funnel:dashboard')
+
+    user = request.user
+    entries = list(
+        visible_funnel_entries(user)
+        .filter(stage=stage)
+        .select_related('salesperson', 'customer', 'proposal')
+        .order_by('-date_created')
+    )
+
+    meta = FUNNEL_STAGE_META[stage]
+    context = {
+        'stage': stage,
+        'stage_meta': meta,
+        'stage_display': dict(SalesFunnel.FUNNEL_STAGES).get(stage, meta['name']),
+        'entries': entries,
+        'entry_count': len(entries),
+        'total_retail': _sum_entry_retail(entries),
+        'total_profit': _sum_entry_profit(entries),
+        'can_add': can_add_entry(user),
+        'can_edit_all': user.role in ['admin', 'supervisor', 'asm', 'sm', 'avp'],
+    }
+    return render(request, 'sales_funnel/stage_detail.html', context)
+
+
 @login_required
 @user_passes_test(can_access_funnel)
 def funnel_dashboard(request):

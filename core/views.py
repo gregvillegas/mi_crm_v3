@@ -4,6 +4,7 @@
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import logout
+from django.views.decorators.http import require_POST
 from django.contrib import messages
 from django.db.models import Sum, Q
 from django.utils import timezone
@@ -218,7 +219,10 @@ def home(request):
 
     return render(request, 'core/home.html', context)
 
+@require_POST
 def logout_view(request):
+    # POST-only: a GET-accessible logout can be triggered by any third-party
+    # page (e.g. <img src=".../logout/">), logging users out without consent.
     logout(request)
     messages.success(request, 'You have been successfully logged out.')
     return redirect('login')

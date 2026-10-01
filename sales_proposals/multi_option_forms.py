@@ -133,14 +133,23 @@ class MultiOptionItemForm(forms.ModelForm):
     # Hidden field to track which option group this item belongs to (by sort_order index)
     option_group_index = forms.IntegerField(widget=forms.HiddenInput(), required=False)
 
+    # Declare price fields as text so comma-formatted values ("2,000.00") are
+    # accepted. A model-derived DecimalField rejects commas in to_python()
+    # with "Enter a number." before clean_unit_cost/clean_unit_price can run.
+    unit_cost = forms.CharField(
+        required=False,
+        widget=forms.TextInput(attrs={'class': 'price-input no-spin', 'inputmode': 'decimal', 'autocomplete': 'off'}),
+    )
+    unit_price = forms.CharField(
+        widget=forms.TextInput(attrs={'class': 'price-input no-spin', 'inputmode': 'decimal', 'autocomplete': 'off'}),
+    )
+
     class Meta:
         model = ProposalItem
         fields = ['part_number', 'description', 'quantity', 'unit_cost', 'unit_price', 'warranty', 'is_bundle', 'bundled_items']
         widgets = {
             'description': forms.Textarea(attrs={'rows': 2}),
             'quantity': forms.NumberInput(attrs={'class': 'no-spin', 'step': '1', 'min': '1', 'inputmode': 'numeric'}),
-            'unit_cost': forms.TextInput(attrs={'class': 'price-input no-spin', 'inputmode': 'decimal', 'autocomplete': 'off'}),
-            'unit_price': forms.TextInput(attrs={'class': 'price-input no-spin', 'inputmode': 'decimal', 'autocomplete': 'off'}),
             'bundled_items': forms.Textarea(attrs={
                 'rows': 3,
                 'placeholder': 'Paste 3–5 columns from Excel (Part Number, Description, Qty, [Unit Price], [Total Price]).\nPricing columns are ignored.',

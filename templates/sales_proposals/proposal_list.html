@@ -2,6 +2,30 @@
 {% load humanize %}
 
 {% block content %}
+<style>
+    /* Truncate long Subject / Customer values to a single line with an ellipsis;
+       the full value is available via the title tooltip on hover. */
+    .proposal-subject-cell { max-width: 280px; }
+    .proposal-customer-cell { max-width: 200px; }
+    .proposal-subject-cell .subject-text,
+    .proposal-customer-cell .customer-text {
+        display: inline-block;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        vertical-align: bottom;
+    }
+    /* Subject keeps its option-count badge visible next to the truncated text. */
+    .proposal-subject-cell .subject-wrap {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        min-width: 0;
+    }
+    .proposal-subject-cell .subject-wrap .subject-text { flex: 1 1 auto; min-width: 0; }
+    .proposal-subject-cell .subject-wrap .badge { flex: 0 0 auto; }
+</style>
 <!-- Page Header -->
 <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
     <div class="d-flex align-items-center gap-3">
@@ -155,15 +179,19 @@
                                 </a>
                             </td>
                             <td>{{ proposal.reference_number|default:"-" }}</td>
-                            <td>
-                                {{ proposal.subject }}
-                                {% if proposal.is_multi_option %}
-                                <span class="badge rounded-pill bg-primary-subtle text-primary border border-primary-subtle ms-1 fw-medium" title="Multi-Option proposal (2 or more options)"><i class="fas fa-file-invoice me-1"></i>2+</span>
-                                {% else %}
-                                <span class="badge rounded-pill bg-secondary-subtle text-secondary border ms-1 fw-medium" title="Single-format proposal (1 option)"><i class="fas fa-file-invoice me-1"></i>1</span>
-                                {% endif %}
+                            <td class="proposal-subject-cell">
+                                <div class="subject-wrap">
+                                    <span class="subject-text" title="{{ proposal.subject }}">{{ proposal.subject }}</span>
+                                    {% if proposal.is_multi_option %}
+                                    <span class="badge rounded-pill bg-primary-subtle text-primary border border-primary-subtle fw-medium" title="Multi-Option proposal (2 or more options)"><i class="fas fa-file-invoice me-1"></i>2+</span>
+                                    {% else %}
+                                    <span class="badge rounded-pill bg-secondary-subtle text-secondary border fw-medium" title="Single-format proposal (1 option)"><i class="fas fa-file-invoice me-1"></i>1</span>
+                                    {% endif %}
+                                </div>
                             </td>
-                            <td>{{ proposal.customer.company_name }}</td>
+                            <td class="proposal-customer-cell">
+                                <span class="customer-text" title="{{ proposal.customer.company_name }}">{{ proposal.customer.company_name }}</span>
+                            </td>
                             <td>{{ proposal.date|date:"m/d/y" }}</td>
                             <td>{% if proposal.currency == 'USD' %}${% else %}₱{% endif %}{{ proposal.quoted_total_amount|intcomma }}</td>
                             <td>
@@ -236,15 +264,19 @@
                             </a>
                         </td>
                         <td>{{ proposal.reference_number|default:"-" }}</td>
-                        <td>
-                            {{ proposal.subject }}
-                            {% if proposal.is_multi_option %}
-                            <span class="badge bg-primary ms-1" title="Multi-Option proposal"><i class="fas fa-layer-group me-1"></i>Multi</span>
-                            {% else %}
-                            <span class="badge bg-light text-secondary border ms-1" title="Single-format proposal">Single</span>
-                            {% endif %}
+                        <td class="proposal-subject-cell">
+                            <div class="subject-wrap">
+                                <span class="subject-text" title="{{ proposal.subject }}">{{ proposal.subject }}</span>
+                                {% if proposal.is_multi_option %}
+                                <span class="badge bg-primary" title="Multi-Option proposal"><i class="fas fa-layer-group me-1"></i>Multi</span>
+                                {% else %}
+                                <span class="badge bg-light text-secondary border" title="Single-format proposal">Single</span>
+                                {% endif %}
+                            </div>
                         </td>
-                        <td>{{ proposal.customer.company_name }}</td>
+                        <td class="proposal-customer-cell">
+                            <span class="customer-text" title="{{ proposal.customer.company_name }}">{{ proposal.customer.company_name }}</span>
+                        </td>
                         <td>{{ proposal.date|date:"m/d/y" }}</td>
                         <td>{% if proposal.currency == 'USD' %}${% else %}₱{% endif %}{{ proposal.quoted_total_amount|intcomma }}</td>
                         <td>

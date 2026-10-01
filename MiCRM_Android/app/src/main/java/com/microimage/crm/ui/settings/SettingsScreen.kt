@@ -7,16 +7,56 @@ import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.microimage.crm.api.RetrofitClient
 import com.microimage.crm.ui.Screen
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(token: String, navController: NavController) {
+    val scope = rememberCoroutineScope()
+    var showSignOutDialog by remember { mutableStateOf(false) }
+    var isSigningOut by remember { mutableStateOf(false) }
+
+    // Revoking the token server-side is best effort — an offline device or an
+    // older server build must not leave the user stuck on this screen.
+    fun signOut() {
+        if (isSigningOut) return
+        isSigningOut = true
+        scope.launch {
+            runCatching { RetrofitClient.apiService.logout("Token $token") }
+            navController.navigate(Screen.Login.route) {
+                popUpTo(0) { inclusive = true }
+            }
+        }
+    }
+
+    if (showSignOutDialog) {
+        AlertDialog(
+            onDismissRequest = { showSignOutDialog = false },
+            title = { Text("Sign out?") },
+            text = { Text("You will need to sign in again to use MiCRM.") },
+            confirmButton = {
+                TextButton(onClick = { showSignOutDialog = false; signOut() }) {
+                    Text("Sign out", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSignOutDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -48,10 +88,7 @@ fun SettingsScreen(token: String, navController: NavController) {
                 subtitle = "Sign out of your account",
                 color = MaterialTheme.colorScheme.error
             ) {
-                // Clear token/session if needed
-                navController.navigate(Screen.Login.route) {
-                    popUpTo(0) { inclusive = true }
-                }
+                showSignOutDialog = true
             }
         }
     }

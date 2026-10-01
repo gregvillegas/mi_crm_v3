@@ -37,9 +37,12 @@
                                 <a class="nav-link" href="{% url 'mfa_index' %}">
                                     <i class="fas fa-mobile-alt me-2"></i>Two-Factor Authentication
                                 </a>
-                                <a class="nav-link text-danger" href="{% url 'logout' %}">
-                                    <i class="fas fa-sign-out-alt me-2"></i>Sign Out
-                                </a>
+                                <form method="post" action="{% url 'logout' %}">
+                                    {% csrf_token %}
+                                    <button type="submit" class="nav-link text-danger border-0 bg-transparent text-start w-100">
+                                        <i class="fas fa-sign-out-alt me-2"></i>Sign Out
+                                    </button>
+                                </form>
                             </nav>
                         </div>
                     </div>

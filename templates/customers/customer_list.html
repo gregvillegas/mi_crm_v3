@@ -48,6 +48,38 @@
             display: inline;
         }
     }
+    /* Fixed table layout with explicit per-column widths so Company/Contact get
+       the room they need and Status/AM shrink to fit their short content.
+       Company gets the most space, Contact second; long values in both are
+       truncated to a single line with an ellipsis (full value shown on hover). */
+    .customer-table-wrapper table {
+        table-layout: fixed;
+        width: 100%;
+    }
+    .customer-table-wrapper col.col-company { width: 34%; }
+    .customer-table-wrapper col.col-contact { width: 28%; }
+    .customer-table-wrapper col.col-status  { width: 110px; }
+    .customer-table-wrapper col.col-am      { width: 150px; }
+    .customer-table-wrapper col.col-actions { width: auto; }
+
+    .customer-company-name,
+    .customer-contact-name {
+        display: block;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    /* Keep status/AM badges on a single line within their narrow columns. */
+    .customer-table-wrapper td.col-status .badge { white-space: nowrap; }
+    .customer-table-wrapper td.col-am .am-username {
+        display: inline-block;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        vertical-align: bottom;
+    }
 </style>
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h2>Customer Management</h2>
@@ -293,8 +325,15 @@
 
 {% if view_mode == 'table' %}
 <!-- Customer Table -->
-<div class="table-responsive">
+<div class="table-responsive customer-table-wrapper">
     <table class="table table-striped table-hover align-middle">
+        <colgroup>
+            <col class="col-company">
+            <col class="col-contact">
+            <col class="col-status">
+            <col class="col-am">
+            <col class="col-actions">
+        </colgroup>
         <thead class="table-dark">
             <tr>
                 <th>Company</th>
@@ -307,27 +346,21 @@
         <tbody>
             {% for customer in customers %}
                 <tr class="{% if customer.is_millionaire_account %}table-warning{% elif not customer.is_effectively_active %}table-secondary{% endif %}">
-                    <td>
-                        <a href="{% url 'customer_detail' customer.pk %}" class="text-decoration-none fw-bold text-dark">{{ customer.company_name }}</a>
-                        {% if customer.is_millionaire_account %}
-                            <span class="badge bg-warning text-dark ms-1">Millionaire</span>
-                        {% endif %}
-                        {% if not customer.is_effectively_active %}
-                            <span class="badge bg-secondary ms-1">Inactive</span>
-                        {% endif %}
+                    <td class="col-company">
+                        <a href="{% url 'customer_detail' customer.pk %}"
+                           class="text-decoration-none fw-bold text-dark customer-company-name"
+                           title="{{ customer.company_name }}">{{ customer.company_name }}</a>
                     </td>
-                    <td>
-                        <strong>{{ customer.contact_person_name }}</strong>
-                        {% if customer.contact_person_position %}
-                            <small class="text-muted">({{ customer.contact_person_position }})</small>
-                        {% endif %}
+                    <td class="col-contact">
+                        <strong class="customer-contact-name" title="{{ customer.contact_person_name }}{% if customer.contact_person_position %} — {{ customer.contact_person_position }}{% endif %}">{{ customer.contact_person_name }}</strong>
                     </td>
-                    <td>
-                        <span class="badge bg-{% if customer.is_millionaire_account and customer.is_effectively_active %}warning text-dark{% elif customer.is_millionaire_account and not customer.is_effectively_active %}secondary{% elif customer.is_effectively_active %}success{% else %}danger{% endif %}">
-                            {{ customer.display_status }}
+                    <td class="col-status">
+                        <span class="badge bg-{% if customer.is_millionaire_account and customer.is_effectively_active %}warning text-dark{% elif customer.is_millionaire_account and not customer.is_effectively_active %}secondary{% elif customer.is_effectively_active %}success{% else %}danger{% endif %}"
+                              title="{{ customer.display_status }}">
+                            {% if customer.is_millionaire_account %}Millionaire{% elif customer.is_effectively_active %}Active{% else %}Inactive{% endif %}
                         </span>
                     </td>
-                    <td>
+                    <td class="col-am">
                         {% if customer.salesperson %}
                             <div class="d-flex align-items-center">
                                 {% if customer.salesperson.initials %}
@@ -335,7 +368,7 @@
                                 {% else %}
                                     <span class="badge bg-secondary me-2">{{ customer.salesperson.username|slice:":2"|upper }}</span>
                                 {% endif %}
-                                <small class="text-muted">@{{ customer.salesperson.username }}</small>
+                                <small class="text-muted am-username" title="@{{ customer.salesperson.username }}">@{{ customer.salesperson.username }}</small>
                             </div>
                         {% else %}
                             <span class="text-muted">Unassigned</span>
@@ -404,14 +437,8 @@
     <div class="col-md-6 col-lg-4 mb-3">
         <div class="card h-100">
             <div class="card-header d-flex justify-content-between align-items-center">
-                <div>
-                    <a href="{% url 'customer_detail' customer.pk %}" class="text-decoration-none fw-bold text-dark">{{ customer.company_name }}</a>
-                    {% if customer.is_millionaire_account %}
-                        <span class="badge bg-warning text-dark ms-1">Millionaire</span>
-                    {% endif %}
-                    {% if not customer.is_effectively_active %}
-                        <span class="badge bg-secondary ms-1">Inactive</span>
-                    {% endif %}
+                <div class="text-truncate">
+                    <a href="{% url 'customer_detail' customer.pk %}" class="text-decoration-none fw-bold text-dark" title="{{ customer.company_name }}">{{ customer.company_name }}</a>
                 </div>
                 <a href="{% url 'customer_history' customer.pk %}" class="btn btn-sm btn-outline-primary">
                     <i class="fas fa-history"></i>
@@ -420,10 +447,7 @@
             <div class="card-body">
                 <div class="mb-2">
                     <small class="text-muted">Contact:</small><br>
-                    <strong>{{ customer.contact_person_name }}</strong>
-                    {% if customer.contact_person_position %}
-                        <br><small class="text-muted">{{ customer.contact_person_position }}</small>
-                    {% endif %}
+                    <strong title="{% if customer.contact_person_position %}{{ customer.contact_person_position }}{% endif %}">{{ customer.contact_person_name }}</strong>
                 </div>
                 <div class="mb-2">
                     <small class="text-muted">Email:</small><br>
@@ -484,6 +508,40 @@
         <p>Try adjusting your filters or add a new customer.</p>
     </div>
     {% endfor %}
+</div>
+{% endif %}
+
+<!-- Pagination -->
+{% if page_obj %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mt-3">
+    <div class="text-muted small mb-2">
+        Showing {{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ paginator.count }} customer{{ paginator.count|pluralize }}
+    </div>
+    {% if is_paginated %}
+    <nav aria-label="Customer list pagination">
+        <ul class="pagination pagination-sm mb-0">
+            <li class="page-item {% if not page_obj.has_previous %}disabled{% endif %}">
+                <a class="page-link" href="?{% if preserved_query %}{{ preserved_query }}&amp;{% endif %}page=1" aria-label="First">&laquo;</a>
+            </li>
+            <li class="page-item {% if not page_obj.has_previous %}disabled{% endif %}">
+                <a class="page-link" href="?{% if preserved_query %}{{ preserved_query }}&amp;{% endif %}page={% if page_obj.has_previous %}{{ page_obj.previous_page_number }}{% else %}1{% endif %}" aria-label="Previous">&lsaquo;</a>
+            </li>
+            {% for num in paginator.page_range %}
+                {% if num == page_obj.number %}
+                    <li class="page-item active" aria-current="page"><span class="page-link">{{ num }}</span></li>
+                {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                    <li class="page-item"><a class="page-link" href="?{% if preserved_query %}{{ preserved_query }}&amp;{% endif %}page={{ num }}">{{ num }}</a></li>
+                {% endif %}
+            {% endfor %}
+            <li class="page-item {% if not page_obj.has_next %}disabled{% endif %}">
+                <a class="page-link" href="?{% if preserved_query %}{{ preserved_query }}&amp;{% endif %}page={% if page_obj.has_next %}{{ page_obj.next_page_number }}{% else %}{{ paginator.num_pages }}{% endif %}" aria-label="Next">&rsaquo;</a>
+            </li>
+            <li class="page-item {% if not page_obj.has_next %}disabled{% endif %}">
+                <a class="page-link" href="?{% if preserved_query %}{{ preserved_query }}&amp;{% endif %}page={{ paginator.num_pages }}" aria-label="Last">&raquo;</a>
+            </li>
+        </ul>
+    </nav>
+    {% endif %}
 </div>
 {% endif %}
 
