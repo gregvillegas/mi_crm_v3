@@ -4,7 +4,7 @@
 from django.contrib import admin
 from django.urls import path, include
 from django.views.generic import RedirectView
-from core.views import home, logout_view
+from core.views import home, logout_view, global_search
 from django.contrib.auth import views as auth_views
 from django.conf import settings
 from django.conf.urls.static import static
@@ -41,6 +41,7 @@ urlpatterns = [
     path('api/v1/logout/', LogoutView.as_view(), name='api-logout'),
     path('api/v1/dashboard/', DashboardView.as_view(), name='api-dashboard'),
     path('', home, name='home'),
+    path('search/', global_search, name='global_search'),
     path('customers/', include('customers.urls')),
     path('users/', include('users.urls')), # <-- ADDED
     path('teams/', include('teams.urls')), # <-- ADDED

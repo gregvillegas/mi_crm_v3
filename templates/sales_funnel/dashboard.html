@@ -1,6 +1,20 @@
 {% extends 'base.html' %}
 {% load humanize %}
 {% block content %}
+<style>
+    /* The Company column holds the company name + requirement description. A
+       character-based truncate (truncatechars) alone doesn't stop the text from
+       wrapping when it's still wider than the column, so clamp both to a single
+       line with an ellipsis. Full text stays available via the title tooltip. */
+    .funnel-company,
+    .funnel-desc {
+        display: block;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+</style>
 <div class="row mb-4">
     <div class="col">
         <div class="d-flex justify-content-between align-items-center">
@@ -278,14 +292,14 @@
                         <tr>
                             <td><strong class="small">{{ entry.date_created|date:"M d" }}</strong></td>
                             <td>
-                                <div class="fw-semibold text-primary" title="{{ entry.company_name }}">
+                                <div class="fw-semibold text-primary funnel-company" title="{{ entry.company_name }}">
                                     {% if entry.proposal %}
-                                        <a href="{% url 'proposal_detail' entry.proposal.pk %}" class="text-decoration-none text-primary">{{ entry.company_name|truncatechars:30 }}</a>
+                                        <a href="{% url 'proposal_detail' entry.proposal.pk %}" class="text-decoration-none text-primary">{{ entry.company_name|truncatechars:40 }}</a>
                                     {% else %}
-                                        {{ entry.company_name|truncatechars:30 }}
+                                        {{ entry.company_name|truncatechars:40 }}
                                     {% endif %}
                                 </div>
-                                <div class="text-muted small" title="{{ entry.requirement_description }}">{{ entry.requirement_description|truncatechars:40 }}</div>
+                                <div class="text-muted small funnel-desc" title="{{ entry.requirement_description }}">{{ entry.requirement_description|truncatechars:40 }}</div>
                                 
                             </td>
                             <td class="small text-muted editable-notes" data-entry-id="{{ entry.id }}" data-full-notes="{{ entry.notes|default:"" }}" style="cursor:pointer;" title="{{ entry.notes|default:"double-click to add" }}">{% if entry.notes %}{{ entry.notes|truncatechars:15 }}{% else %}<span class="text-muted fst-italic">double-click to add</span>{% endif %}</td>
@@ -440,14 +454,14 @@
                         <tr>
                             <td><strong class="small">{{ entry.date_created|date:"M d" }}</strong></td>
                             <td>
-                                <div class="fw-semibold text-warning" title="{{ entry.company_name }}">
+                                <div class="fw-semibold text-warning funnel-company" title="{{ entry.company_name }}">
                                     {% if entry.proposal %}
-                                        <a href="{% url 'proposal_detail' entry.proposal.pk %}" class="text-decoration-none text-warning">{{ entry.company_name|truncatechars:30 }}</a>
+                                        <a href="{% url 'proposal_detail' entry.proposal.pk %}" class="text-decoration-none text-warning">{{ entry.company_name|truncatechars:40 }}</a>
                                     {% else %}
-                                        {{ entry.company_name|truncatechars:30 }}
+                                        {{ entry.company_name|truncatechars:40 }}
                                     {% endif %}
                                 </div>
-                                <div class="text-muted small" title="{{ entry.requirement_description }}">{{ entry.requirement_description|truncatechars:40 }}</div>
+                                <div class="text-muted small funnel-desc" title="{{ entry.requirement_description }}">{{ entry.requirement_description|truncatechars:40 }}</div>
                                 
                             </td>
                             <td class="small text-muted editable-notes" data-entry-id="{{ entry.id }}" data-full-notes="{{ entry.notes|default:"" }}" style="cursor:pointer;" title="{{ entry.notes|default:"double-click to add" }}">{% if entry.notes %}{{ entry.notes|truncatechars:15 }}{% else %}<span class="text-muted fst-italic">double-click to add</span>{% endif %}</td>
@@ -598,14 +612,14 @@
                         <tr>
                             <td><strong class="small">{{ entry.date_created|date:"M d" }}</strong></td>
                             <td>
-                                <div class="fw-semibold text-success" title="{{ entry.company_name }}">
+                                <div class="fw-semibold text-success funnel-company" title="{{ entry.company_name }}">
                                     {% if entry.proposal %}
-                                        <a href="{% url 'proposal_detail' entry.proposal.pk %}" class="text-decoration-none text-success">{{ entry.company_name|truncatechars:30 }}</a>
+                                        <a href="{% url 'proposal_detail' entry.proposal.pk %}" class="text-decoration-none text-success">{{ entry.company_name|truncatechars:40 }}</a>
                                     {% else %}
-                                        {{ entry.company_name|truncatechars:30 }}
+                                        {{ entry.company_name|truncatechars:40 }}
                                     {% endif %}
                                 </div>
-                                <div class="text-muted small" title="{{ entry.requirement_description }}">{{ entry.requirement_description|truncatechars:40 }}</div>
+                                <div class="text-muted small funnel-desc" title="{{ entry.requirement_description }}">{{ entry.requirement_description|truncatechars:40 }}</div>
                                 
                             </td>
                             <td class="small text-muted editable-notes" data-entry-id="{{ entry.id }}" data-full-notes="{{ entry.notes|default:"" }}" style="cursor:pointer;" title="{{ entry.notes|default:"double-click to add" }}">{% if entry.notes %}{{ entry.notes|truncatechars:15 }}{% else %}<span class="text-muted fst-italic">double-click to add</span>{% endif %}</td>
@@ -758,14 +772,14 @@
                         <tr>
                             <td><strong class="small">{{ entry.date_created|date:"M d" }}</strong></td>
                             <td>
-                                <div class="fw-semibold text-primary" title="{{ entry.company_name }}">
+                                <div class="fw-semibold text-primary funnel-company" title="{{ entry.company_name }}">
                                     {% if entry.proposal %}
-                                        <a href="{% url 'proposal_detail' entry.proposal.pk %}" class="text-decoration-none text-primary">{{ entry.company_name|truncatechars:30 }}</a>
+                                        <a href="{% url 'proposal_detail' entry.proposal.pk %}" class="text-decoration-none text-primary">{{ entry.company_name|truncatechars:40 }}</a>
                                     {% else %}
-                                        {{ entry.company_name|truncatechars:30 }}
+                                        {{ entry.company_name|truncatechars:40 }}
                                     {% endif %}
                                 </div>
-                                <div class="text-muted small" title="{{ entry.requirement_description }}">{{ entry.requirement_description|truncatechars:40 }}</div>
+                                <div class="text-muted small funnel-desc" title="{{ entry.requirement_description }}">{{ entry.requirement_description|truncatechars:40 }}</div>
                                 <!--{% if can_add %}
                                 <div class="mt-1">
                                     {% if entry.salesperson.initials %}

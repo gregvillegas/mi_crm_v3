@@ -1,0 +1,99 @@
+/* ============================================================
+   About Modal — hidden dialog triggered by keyboard shortcut
+   ============================================================ */
+
+:root { color-scheme: light dark; }
+
+/* ---------- Modal backdrop ---------- */
+.about-modal-backdrop {
+  display: none;                 /* hidden by default */
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, .55);
+  backdrop-filter: blur(2px);
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  animation: modal-fade .15s ease-out;
+}
+
+.about-modal-backdrop.is-open { display: flex; }
+
+@keyframes modal-fade {
+  from { opacity: 0 }
+  to   { opacity: 1 }
+}
+
+/* ---------- Dialog box ---------- */
+.about-modal {
+  position: relative;
+  background: Canvas;
+  color: CanvasText;
+  border-radius: 14px;
+  padding: 1.75rem 1.75rem 1.5rem;
+  max-width: 26rem;
+  width: 100%;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, .35);
+  animation: modal-pop .18s ease-out;
+}
+
+@keyframes modal-pop {
+  from { transform: translateY(10px) scale(.97); opacity: 0 }
+  to   { transform: none; opacity: 1 }
+}
+
+.about-modal h2 { margin: 0 0 .5rem; font-size: 1.3rem; }
+.about-modal p  { margin: .5rem 0; font-size: .95rem; }
+
+/* ---------- Details list ---------- */
+.about-modal dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: .35rem 1rem;
+  margin: 1rem 0 0;
+  font-size: .9rem;
+}
+.about-modal dt { font-weight: 600; opacity: .7; }
+.about-modal dd { margin: 0; }
+
+/* ---------- Quote ---------- */
+.about-quote {
+  margin: 1.25rem 0 0;
+  padding-top: 1rem;
+  border-top: 1px solid #8883;
+  font-size: 0.78rem;
+  font-style: italic;
+  line-height: 1.5;
+  opacity: 0.75;
+}
+.about-quote cite {
+  display: block;
+  margin-top: .35rem;
+  font-style: normal;
+  font-size: 0.72rem;
+  letter-spacing: .02em;
+  opacity: 0.85;
+}
+
+/* ---------- Close button ---------- */
+.about-modal-close {
+  position: absolute;
+  top: .5rem;
+  right: .5rem;
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+  color: inherit;
+}
+.about-modal-close:hover { background: #8883; }
+
+/* ---------- Accessibility ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .about-modal-backdrop, .about-modal { animation: none; }
+}

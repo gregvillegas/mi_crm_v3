@@ -441,78 +441,81 @@ def notify_creator_of_decision(proposal, decision, decided_by=None, comment='', 
     except Exception:
         return False
 
-@login_required
-def proposal_list(request):
-    if request.user.role == 'salesperson':
-        proposals = Proposal.objects.filter(created_by=request.user)
-    elif request.user.role == 'supervisor':
-        # Get groups managed by this supervisor
-        managed_groups = request.user.managed_groups.all()
-        # Get all users in these groups (salespeople)
+def visible_proposals_queryset(user):
+    """
+    Return the proposals a user is allowed to see, scoped by role. Proposals are
+    scoped by their author (`created_by`). Centralized here so the proposal list
+    and global search share one source of truth for visibility.
+    """
+    if not getattr(user, 'is_authenticated', False):
+        return Proposal.objects.none()
+
+    if user.role == 'salesperson':
+        return Proposal.objects.filter(created_by=user)
+
+    if user.role == 'supervisor':
+        managed_groups = user.managed_groups.all()
         member_ids = []
         for group in managed_groups:
-             member_ids.extend(group.members.values_list('user_id', flat=True))
-        
-        # Include proposals created by the supervisor themselves + their group members
-        member_ids.append(request.user.id)
-        proposals = Proposal.objects.filter(created_by_id__in=member_ids)
-    elif request.user.role == 'avp':
-        # Get teams managed by this AVP
-        managed_teams = request.user.managed_teams.all()
+            member_ids.extend(group.members.values_list('user_id', flat=True))
+        member_ids.append(user.id)
+        return Proposal.objects.filter(created_by_id__in=member_ids)
+
+    if user.role == 'avp':
+        managed_teams = user.managed_teams.all()
         member_ids = []
         for team in managed_teams:
             for group in team.groups.all():
                 member_ids.extend(group.members.values_list('user_id', flat=True))
-                # Include group supervisors
                 if group.supervisor:
                     member_ids.append(group.supervisor.id)
-                # Include SM managers assigned to this group
                 member_ids.extend(group.sm_managers.values_list('id', flat=True))
-            # Include team-level ASM
             if team.asm:
                 member_ids.append(team.asm.id)
-        
-        member_ids.append(request.user.id)
-        proposals = Proposal.objects.filter(created_by_id__in=member_ids)
-    elif request.user.role == 'asm':
-        # ASM sees proposals only from the groups they handle (sm_managers), with
-        # a fallback to the whole team when no groups are assigned. Mirrors the SM
-        # branch below and the shared asm_scoped_groups() helper used app-wide.
-        from teams.models import asm_scoped_groups
-        asm_groups = asm_scoped_groups(request.user)
+        member_ids.append(user.id)
+        return Proposal.objects.filter(created_by_id__in=member_ids)
 
+    if user.role == 'asm':
+        # ASM sees proposals only from the groups they handle, with a fallback to
+        # the whole team when no groups are assigned (shared asm_scoped_groups()).
+        from teams.models import asm_scoped_groups
+        asm_groups = asm_scoped_groups(user)
         member_ids = []
         for group in asm_groups:
             member_ids.extend(group.members.values_list('user_id', flat=True))
             if group.supervisor:
                 member_ids.append(group.supervisor.id)
+        member_ids.append(user.id)
+        return Proposal.objects.filter(created_by_id__in=member_ids)
 
-        member_ids.append(request.user.id)
-        proposals = Proposal.objects.filter(created_by_id__in=member_ids)
-    elif request.user.role == 'sm':
-        # SM sees proposals from their specifically assigned groups only
+    if user.role == 'sm':
+        # SM sees proposals from their specifically assigned groups only.
         from teams.models import Group, TeamMembership
-        sm_groups = request.user.sm_groups.all()
+        sm_groups = user.sm_groups.all()
         member_ids = list(TeamMembership.objects.filter(group__in=sm_groups).values_list('user_id', flat=True))
         supervisor_ids = list(
             Group.objects.filter(id__in=sm_groups.values_list('id', flat=True), supervisor__isnull=False)
             .values_list('supervisor_id', flat=True)
         )
         member_ids.extend(supervisor_ids)
-        member_ids.append(request.user.id)
-        proposals = Proposal.objects.filter(created_by_id__in=member_ids)
-    elif request.user.role == 'teamlead':
-        # Team Leads see their led groups
-        led_groups = request.user.led_groups.all()
+        member_ids.append(user.id)
+        return Proposal.objects.filter(created_by_id__in=member_ids)
+
+    if user.role == 'teamlead':
+        led_groups = user.led_groups.all()
         member_ids = []
         for group in led_groups:
             member_ids.extend(group.members.values_list('user_id', flat=True))
-        
-        member_ids.append(request.user.id)
-        proposals = Proposal.objects.filter(created_by_id__in=member_ids)
-    else:
-        # Admins, VPs, GMs see all
-        proposals = Proposal.objects.all()
+        member_ids.append(user.id)
+        return Proposal.objects.filter(created_by_id__in=member_ids)
+
+    # Admins, VPs, GMs, president see all
+    return Proposal.objects.all()
+
+
+@login_required
+def proposal_list(request):
+    proposals = visible_proposals_queryset(request.user)
     
     # Get list of salespeople for filter dropdown (from the visible proposals)
     salespeople_ids = proposals.values_list('created_by', flat=True).distinct()

@@ -48,6 +48,59 @@
             display: inline;
         }
     }
+    /* --- Phone layout (<= 768px): compact, icon-only buttons that flow
+       horizontally and wrap into ~2 rows instead of stacking. The primary
+       "Add Customer" action becomes a floating button (see .customer-fab). --- */
+    @media (max-width: 768px) {
+        .customer-toolbar {
+            justify-content: flex-start;
+            align-items: flex-start;
+            width: 100%;
+        }
+        .customer-icon-actions {
+            flex-wrap: wrap;
+            gap: 0.4rem;
+        }
+        /* Keep every tool button icon-only on phones (labels available via the
+           title/aria-label for assistive tech and long-press tooltips). */
+        .customer-icon-btn .btn-label {
+            display: none !important;
+        }
+        .customer-icon-btn {
+            width: 44px;
+            min-width: 44px;
+            height: 44px;
+            padding: 0;
+        }
+        .customer-icon-btn i {
+            font-size: 1.05rem;
+        }
+        /* Move the pending-count badge to the top-right corner of the icon. */
+        .customer-icon-btn .pending-badge {
+            position: absolute;
+            top: -6px;
+            right: -6px;
+            margin-left: 0;
+            font-size: 0.65rem;
+        }
+        /* Stack the header title above the compact tool row on phones. */
+        .customer-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.5rem;
+        }
+        /* The desktop inline "Add Customer" button is hidden on phones; it is
+           rendered instead as a floating action button below. */
+        .customer-add-inline {
+            display: none !important;
+        }
+    }
+    @media (min-width: 769px) {
+        /* Floating Add Customer button is phone-only chrome. */
+        .customer-fab {
+            display: none !important;
+        }
+    }
     /* Fixed table layout with explicit per-column widths so Company/Contact get
        the room they need and Status/AM shrink to fit their short content.
        Company gets the most space, Contact second; long values in both are
@@ -81,7 +134,7 @@
         vertical-align: bottom;
     }
 </style>
-<div class="d-flex justify-content-between align-items-center mb-3">
+<div class="d-flex justify-content-between align-items-center mb-3 customer-header">
     <h2>Customer Management</h2>
     <div class="customer-toolbar">
         {% if user.role == 'admin' or user.role == 'vp' or user.role == 'gm' or user.role == 'marketing' %}
@@ -117,12 +170,20 @@
             </a>
         {% endif %}
         {% if user.role == 'admin' or user.role == 'vp' or user.role == 'gm' or user.role == 'avp' or user.role == 'supervisor' or user.role == 'asm' or user.role == 'teamlead' or user.role == 'salesperson' %}
-            <a href="{% url 'create_customer' %}" class="btn btn-primary customer-icon-btn" title="Add Customer" aria-label="Add Customer">
+            <a href="{% url 'create_customer' %}" class="btn btn-primary customer-icon-btn customer-add-inline" title="Add Customer" aria-label="Add Customer">
                 <i class="fas fa-plus"></i><span class="btn-label">Add Customer</span>
             </a>
         {% endif %}
     </div>
 </div>
+
+{% if user.role == 'admin' or user.role == 'vp' or user.role == 'gm' or user.role == 'avp' or user.role == 'supervisor' or user.role == 'asm' or user.role == 'teamlead' or user.role == 'salesperson' %}
+<!-- Floating Add Customer button (phone only). Reuses the app-wide .m-fab
+     styling so it sits above the bottom tab bar and matches other FABs. -->
+<a href="{% url 'create_customer' %}" class="m-fab customer-fab" title="Add Customer" aria-label="Add Customer">
+    <i class="fas fa-plus"></i>
+</a>
+{% endif %}
 
 <!-- Statistics Cards -->
 <div class="row mb-4">

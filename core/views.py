@@ -226,3 +226,82 @@ def logout_view(request):
     logout(request)
     messages.success(request, 'You have been successfully logged out.')
     return redirect('login')
+
+
+# -----------------------------------------------------------------------------
+# Global navbar search
+# -----------------------------------------------------------------------------
+# Searches four entity types, each scoped to what the current user may see by
+# reusing the existing per-app visibility helpers (so the search never leaks a
+# record the user couldn't otherwise reach). Users are only searchable by roles
+# that can manage users (admin/vp), matching the user-management permission gate.
+SEARCH_RESULT_LIMIT = 8
+USER_SEARCH_ROLES = {'admin', 'vp'}
+
+
+@login_required
+def global_search(request):
+    from customers.permissions import visible_customers_queryset
+    from sales_funnel.views import visible_funnel_entries
+    from sales_proposals.views import visible_proposals_queryset
+    from customers.models import Customer  # noqa: F401 (kept for clarity)
+
+    query = (request.GET.get('q') or '').strip()
+    user = request.user
+
+    proposals = customers = funnel_entries = users = []
+    counts = {'proposals': 0, 'customers': 0, 'funnel': 0, 'users': 0}
+
+    if query:
+        # Proposals — by proposal #, reference #, subject, or customer company.
+        proposal_qs = visible_proposals_queryset(user).filter(
+            Q(proposal_number__icontains=query)
+            | Q(reference_number__icontains=query)
+            | Q(subject__icontains=query)
+            | Q(customer__company_name__icontains=query)
+        ).select_related('customer', 'created_by').order_by('-date')
+        counts['proposals'] = proposal_qs.count()
+        proposals = list(proposal_qs[:SEARCH_RESULT_LIMIT])
+
+        # Customers — by company, contact person, or email.
+        customer_qs = visible_customers_queryset(user).filter(
+            Q(company_name__icontains=query)
+            | Q(contact_person_name__icontains=query)
+            | Q(email__icontains=query)
+        ).select_related('salesperson').order_by('company_name')
+        counts['customers'] = customer_qs.count()
+        customers = list(customer_qs[:SEARCH_RESULT_LIMIT])
+
+        # Funnel entries — by company, brand, or requirement description.
+        funnel_qs = visible_funnel_entries(user).filter(
+            Q(company_name__icontains=query)
+            | Q(brand__icontains=query)
+            | Q(requirement_description__icontains=query)
+        ).select_related('salesperson', 'customer', 'proposal').order_by('-date_created')
+        counts['funnel'] = funnel_qs.count()
+        funnel_entries = list(funnel_qs[:SEARCH_RESULT_LIMIT])
+
+        # Users — only for roles permitted to view user management.
+        if user.role in USER_SEARCH_ROLES:
+            user_qs = User.objects.filter(
+                Q(username__icontains=query)
+                | Q(first_name__icontains=query)
+                | Q(last_name__icontains=query)
+                | Q(email__icontains=query)
+                | Q(initials__icontains=query)
+            ).order_by('first_name', 'last_name', 'username')
+            counts['users'] = user_qs.count()
+            users = list(user_qs[:SEARCH_RESULT_LIMIT])
+
+    context = {
+        'query': query,
+        'proposals': proposals,
+        'customers': customers,
+        'funnel_entries': funnel_entries,
+        'users': users,
+        'counts': counts,
+        'result_limit': SEARCH_RESULT_LIMIT,
+        'total_results': sum(counts.values()),
+        'can_search_users': user.role in USER_SEARCH_ROLES,
+    }
+    return render(request, 'core/search_results.html', context)

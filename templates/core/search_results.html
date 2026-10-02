@@ -1,0 +1,189 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="d-flex flex-wrap align-items-center justify-content-between mb-4 gap-2">
+        <h2 class="mb-0"><i class="fas fa-search text-primary me-2"></i>Search</h2>
+    </div>
+
+    <!-- Search box (also available in the navbar) -->
+    <form method="get" action="{% url 'global_search' %}" class="mb-4" role="search">
+        <div class="input-group input-group-lg">
+            <span class="input-group-text"><i class="fas fa-search"></i></span>
+            <input type="search" name="q" class="form-control" value="{{ query }}"
+                   placeholder="Search proposals, customers, funnel entries{% if can_search_users %}, users{% endif %}…"
+                   autofocus>
+            <button type="submit" class="btn btn-primary">Search</button>
+        </div>
+    </form>
+
+    {% if not query %}
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle me-2"></i>
+            Type a keyword to search by proposal/reference number, customer, funnel entry{% if can_search_users %}, or user{% endif %}.
+        </div>
+    {% else %}
+        <p class="text-muted">
+            {{ total_results }} result{{ total_results|pluralize }} for <strong>"{{ query }}"</strong>
+        </p>
+
+        {% if total_results == 0 %}
+            <div class="text-center text-muted py-5">
+                <i class="fas fa-search fa-3x mb-3"></i>
+                <h5>No matches found</h5>
+                <p>Try a different keyword or check the spelling.</p>
+            </div>
+        {% endif %}
+
+        <!-- Proposals -->
+        {% if proposals %}
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-file-invoice-dollar text-primary me-2"></i>Proposals</h5>
+                <span class="badge bg-secondary">{{ counts.proposals }}</span>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Proposal #</th>
+                            <th>Reference #</th>
+                            <th>Subject</th>
+                            <th>Customer</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for p in proposals %}
+                        <tr>
+                            <td><a href="{% url 'proposal_detail' p.pk %}" class="text-decoration-none fw-semibold">{{ p.proposal_number }}</a></td>
+                            <td class="small text-muted">{{ p.reference_number|default:"—" }}</td>
+                            <td>{{ p.subject|truncatechars:60 }}</td>
+                            <td class="small">{% if p.customer %}{{ p.customer.company_name|truncatechars:40 }}{% else %}—{% endif %}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% if counts.proposals > result_limit %}
+            <div class="card-footer text-end small">
+                <a href="{% url 'proposal_list' %}?search={{ query|urlencode }}">View all {{ counts.proposals }} proposals &raquo;</a>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- Customers -->
+        {% if customers %}
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-users text-success me-2"></i>Customers</h5>
+                <span class="badge bg-secondary">{{ counts.customers }}</span>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Company</th>
+                            <th>Contact</th>
+                            <th>Email</th>
+                            <th>AM</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for c in customers %}
+                        <tr>
+                            <td><a href="{% url 'customer_detail' c.pk %}" class="text-decoration-none fw-semibold">{{ c.company_name|truncatechars:45 }}</a></td>
+                            <td class="small">{{ c.contact_person_name|default:"—" }}</td>
+                            <td class="small text-muted">{{ c.email|default:"—" }}</td>
+                            <td class="small">{% if c.salesperson %}{{ c.salesperson.initials|default:c.salesperson.username }}{% else %}<span class="text-muted">Unassigned</span>{% endif %}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% if counts.customers > result_limit %}
+            <div class="card-footer text-end small">
+                <a href="{% url 'customer_list' %}?search={{ query|urlencode }}">View all {{ counts.customers }} customers &raquo;</a>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- Funnel entries -->
+        {% if funnel_entries %}
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-filter text-info me-2"></i>Funnel Entries</h5>
+                <span class="badge bg-secondary">{{ counts.funnel }}</span>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Company</th>
+                            <th>Brand</th>
+                            <th>Requirement</th>
+                            <th>Stage</th>
+                            <th>AM</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for e in funnel_entries %}
+                        <tr>
+                            <td><a href="{% url 'sales_funnel:entry_detail' e.id %}" class="text-decoration-none fw-semibold">{{ e.company_name|truncatechars:40 }}</a></td>
+                            <td class="small">{{ e.brand|default:"—" }}</td>
+                            <td class="small text-muted">{{ e.requirement_description|truncatechars:50 }}</td>
+                            <td><span class="badge bg-{{ e.stage_color }}">{{ e.get_stage_display }}</span></td>
+                            <td class="small">{% if e.salesperson %}{{ e.salesperson.initials|default:e.salesperson.username }}{% else %}—{% endif %}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% if counts.funnel > result_limit %}
+            <div class="card-footer text-end small">
+                <a href="{% url 'sales_funnel:dashboard' %}">View the funnel dashboard &raquo;</a>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- Users -->
+        {% if users %}
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-user text-secondary me-2"></i>Users</h5>
+                <span class="badge bg-secondary">{{ counts.users }}</span>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Name</th>
+                            <th>Username</th>
+                            <th>Email</th>
+                            <th>Role</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for u in users %}
+                        <tr>
+                            <td><a href="{% url 'edit_user' u.id %}" class="text-decoration-none fw-semibold">{{ u.get_full_name|default:u.username }}</a></td>
+                            <td class="small text-muted">@{{ u.username }}</td>
+                            <td class="small text-muted">{{ u.email|default:"—" }}</td>
+                            <td class="small">{{ u.get_role_display|default:u.role }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% if counts.users > result_limit %}
+            <div class="card-footer text-end small">
+                <a href="{% url 'user_management' %}?search={{ query|urlencode }}">View all {{ counts.users }} users &raquo;</a>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+    {% endif %}
+</div>
+{% endblock %}
