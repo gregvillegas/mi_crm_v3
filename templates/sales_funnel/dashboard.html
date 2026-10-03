@@ -248,18 +248,20 @@
                 <label class="form-label">Date To</label>
                 {{ filter_form.date_to }}
             </div>
-            <div class="col-md-3">
-                <button type="submit" class="btn btn-primary">
-                    <i class="fas fa-filter"></i> Filter
-                </button>
-                <a href="{% url 'sales_funnel:dashboard' %}" class="btn btn-outline-secondary">
-                    <i class="fas fa-times"></i> Clear
-                </a>
-                {% if not can_add or user.role == 'avp' or user.role == 'sm' or user.role == 'asm' or user.role == 'supervisor' %}
-                <button type="button" class="btn btn-outline-success" onclick="exportFunnel()">
-                    <i class="fas fa-file-export"></i> Export Excel
-                </button>
-                {% endif %}
+            <div class="col-12">
+                <div class="d-flex flex-wrap gap-2">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-filter"></i> Filter
+                    </button>
+                    <a href="{% url 'sales_funnel:dashboard' %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-times"></i> Clear
+                    </a>
+                    {% if not can_add or user.role == 'avp' or user.role == 'sm' or user.role == 'asm' or user.role == 'supervisor' %}
+                    <button type="button" class="btn btn-outline-success" onclick="exportFunnel()">
+                        <i class="fas fa-file-export"></i> Export Excel
+                    </button>
+                    {% endif %}
+                </div>
             </div>
         </form>
         {% if brand_suggestions %}

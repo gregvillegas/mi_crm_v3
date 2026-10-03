@@ -53,6 +53,13 @@ interface ApiService {
     @GET("dashboard/")
     suspend fun getDashboard(@Header("Authorization") token: String): Response<DashboardSummary>
 
+    /** Unified search across proposals, customers, and funnel entries. */
+    @GET("search/")
+    suspend fun globalSearch(
+        @Header("Authorization") token: String,
+        @Query("q") query: String
+    ): Response<com.microimage.crm.model.SearchResults>
+
     @GET("funnel/")
     suspend fun getSalesFunnel(
         @Header("Authorization") token: String,

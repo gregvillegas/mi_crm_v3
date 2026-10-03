@@ -64,7 +64,7 @@
 <!-- Filters -->
 <div class="card border-0 shadow-sm mb-4">
     <div class="card-body py-3">
-        <form method="get" class="row g-2 align-items-end">
+        <form method="get" id="proposalFilterForm" class="row g-2 align-items-end">
             {% if user.role != 'salesperson' and salespeople %}
             <div class="col-6 col-md-3 col-lg-2">
                 <label for="filter-salesperson" class="form-label small text-muted mb-1">Salesperson</label>
@@ -129,13 +129,18 @@
                 </select>
             </div>
 
-            <div class="col-6 col-md-3 col-lg-2 d-flex gap-1">
+            <div class="col-12 col-md-6 col-lg-3 d-flex gap-1">
                 <button type="submit" class="btn btn-sm btn-primary flex-grow-1">
                     <i class="fas fa-filter me-1"></i>Filter
                 </button>
                 <a href="{% url 'proposal_list' %}" class="btn btn-sm btn-outline-secondary" title="Clear filters">
                     <i class="fas fa-times"></i>
                 </a>
+                {% if user.role == 'admin' or user.role == 'avp' or user.role == 'asm' or user.role == 'sm' %}
+                <button type="button" class="btn btn-sm btn-outline-success flex-grow-1" onclick="exportProposals()" title="Export to Excel">
+                    <i class="fas fa-file-export me-1"></i>Export Excel
+                </button>
+                {% endif %}
             </div>
         </form>
     </div>
@@ -352,5 +357,13 @@ document.addEventListener('DOMContentLoaded', function () {
     teamSel.addEventListener('change', syncGroups);
     syncGroups();
 });
+
+// Export the currently-filtered proposals to Excel, carrying the filter form's
+// selections (salesperson, month, team, group, format) as query params.
+function exportProposals() {
+    var form = document.getElementById('proposalFilterForm');
+    var params = form ? new URLSearchParams(new FormData(form)) : new URLSearchParams();
+    window.location = "{% url 'export_proposals_excel' %}?" + params.toString();
+}
 </script>
 {% endblock %}

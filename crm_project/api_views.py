@@ -772,3 +772,73 @@ class DashboardView(APIView):
                 recent_proposals, many=True, context={'request': request}
             ).data,
         })
+
+
+class GlobalSearchView(APIView):
+    """
+    Unified search across proposals, customers, and funnel entries — the API
+    counterpart of the web navbar search (core.views.global_search). Results are
+    role-scoped via the same helpers the rest of the API uses, so a user only
+    ever sees records they're allowed to.
+
+    GET /api/v1/search/?q=<term>
+
+    Returns up to SEARCH_LIMIT of each type plus total counts. (User search is
+    intentionally omitted on mobile — there's no user-management screen there.)
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    SEARCH_LIMIT = 15
+
+    def get(self, request):
+        query = (request.query_params.get('q') or '').strip()
+        user = request.user
+
+        empty = {
+            'query': query,
+            'proposals': [], 'customers': [], 'funnel': [],
+            'counts': {'proposals': 0, 'customers': 0, 'funnel': 0},
+            'total': 0,
+        }
+        if not query:
+            return Response(empty)
+
+        proposal_qs = get_visible_proposal_queryset(user).filter(
+            Q(proposal_number__icontains=query)
+            | Q(reference_number__icontains=query)
+            | Q(subject__icontains=query)
+            | Q(customer__company_name__icontains=query)
+        ).select_related('customer', 'created_by').order_by('-date')
+
+        customer_qs = get_visible_customer_queryset(user).filter(
+            Q(company_name__icontains=query)
+            | Q(contact_person_name__icontains=query)
+            | Q(email__icontains=query)
+        ).select_related('salesperson').order_by('company_name')
+
+        funnel_qs = visible_funnel_queryset(user).filter(
+            Q(company_name__icontains=query)
+            | Q(brand__icontains=query)
+            | Q(requirement_description__icontains=query)
+        ).select_related('salesperson', 'customer', 'proposal').order_by('-date_created')
+
+        p_count, c_count, f_count = proposal_qs.count(), customer_qs.count(), funnel_qs.count()
+        ctx = {'request': request}
+
+        return Response({
+            'query': query,
+            'proposals': ProposalListSerializer(
+                proposal_qs[:self.SEARCH_LIMIT], many=True, context=ctx
+            ).data,
+            'customers': CustomerListSerializer(
+                customer_qs[:self.SEARCH_LIMIT], many=True, context=ctx
+            ).data,
+            'funnel': SalesFunnelSerializer(
+                funnel_qs[:self.SEARCH_LIMIT], many=True, context=ctx
+            ).data,
+            'counts': {
+                'proposals': p_count,
+                'customers': c_count,
+                'funnel': f_count,
+            },
+            'total': p_count + c_count + f_count,
+        })

@@ -154,6 +154,15 @@ class MainActivity : ComponentActivity() {
                             val token = backStackEntry.arguments?.getString("token") ?: ""
                             com.microimage.crm.ui.settings.SettingsScreen(token, navController)
                         }
+
+                        // --- GLOBAL SEARCH ---
+                        composable(
+                            route = Screen.GlobalSearch.route,
+                            arguments = listOf(navArgument("token") { type = NavType.StringType })
+                        ) { backStackEntry ->
+                            val token = backStackEntry.arguments?.getString("token") ?: ""
+                            com.microimage.crm.ui.search.GlobalSearchScreen(token, navController)
+                        }
                     }
                 }
             }

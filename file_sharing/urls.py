@@ -20,4 +20,12 @@ urlpatterns = [
     # User file management
     path('my-files/', views.my_files, name='my_files'),
     path('all-files/', views.all_groups_files, name='all_files'),
+
+    # Company-wide shared files (readable by everyone)
+    path('company/', views.company_files, name='company_files'),
+    path('company/upload/', views.company_upload, name='company_upload'),
+    path('company/<int:file_id>/edit/', views.company_edit, name='company_edit'),
+    path('company/<int:file_id>/download/', views.company_download, name='company_download'),
+    path('company/<int:file_id>/view/', views.company_view, name='company_view'),
+    path('company/<int:file_id>/delete/', views.company_delete, name='company_delete'),
 ]

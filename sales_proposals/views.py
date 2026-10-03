@@ -513,6 +513,132 @@ def visible_proposals_queryset(user):
     return Proposal.objects.all()
 
 
+def _apply_proposal_list_filters(request, proposals):
+    """
+    Apply the proposal-list GET filters (salesperson, month, team, group,
+    format) to an already role-scoped proposals queryset. Shared by the list
+    view and the Excel export so both reflect the same selection.
+    """
+    salesperson_id = request.GET.get('salesperson')
+    if salesperson_id:
+        try:
+            proposals = proposals.filter(created_by_id=int(salesperson_id))
+        except (ValueError, TypeError):
+            pass
+
+    selected_month = request.GET.get('month')
+    if selected_month:
+        try:
+            year, month = map(int, selected_month.split('-'))
+            proposals = proposals.filter(date__year=year, date__month=month)
+        except (ValueError, TypeError):
+            pass
+
+    from teams.models import asm_scoped_groups
+    selected_team = request.GET.get('team') or ''
+    selected_group = request.GET.get('group') or ''
+
+    if request.user.role in ['admin', 'gm', 'vp', 'president', 'avp']:
+        if selected_team:
+            try:
+                proposals = proposals.filter(created_by__team_membership__group__team_id=int(selected_team))
+            except (ValueError, TypeError):
+                pass
+        if selected_group:
+            try:
+                proposals = proposals.filter(created_by__team_membership__group_id=int(selected_group))
+            except (ValueError, TypeError):
+                pass
+    elif request.user.role in ['asm', 'sm']:
+        if request.user.role == 'asm':
+            allowed_group_ids = set(asm_scoped_groups(request.user).values_list('id', flat=True))
+        else:
+            allowed_group_ids = set(request.user.sm_groups.values_list('id', flat=True))
+        if selected_group:
+            try:
+                if int(selected_group) in allowed_group_ids:
+                    proposals = proposals.filter(created_by__team_membership__group_id=int(selected_group))
+            except (ValueError, TypeError):
+                pass
+
+    selected_format = request.GET.get('format') or ''
+    if selected_format == 'multi':
+        proposals = proposals.filter(is_multi_option=True)
+    elif selected_format == 'single':
+        proposals = proposals.filter(is_multi_option=False)
+
+    return proposals
+
+
+@login_required
+def export_proposals_excel(request):
+    """
+    Export the (role-scoped, filtered) proposals to an Excel workbook.
+    Restricted to Admin, AVP, and Sales Manager (asm/sm).
+    """
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+
+    if request.user.role not in ['admin', 'avp', 'asm', 'sm']:
+        messages.error(request, 'You are not authorized to export proposals.')
+        return redirect('proposal_list')
+
+    proposals = _apply_proposal_list_filters(
+        request, visible_proposals_queryset(request.user)
+    ).select_related('customer', 'created_by').order_by('-date', '-created_at')
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'Proposals'
+
+    headers = [
+        'Proposal #', 'Reference #', 'Subject', 'Customer', 'Date',
+        'Currency', 'Amount', 'Amount (PHP)', 'Status', 'Approval Status',
+        'Account Manager', 'Format',
+    ]
+    header_fill = PatternFill(start_color='A11313', end_color='A11313', fill_type='solid')
+    header_font = Font(bold=True, color='FFFFFF')
+    for col_idx, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col_idx, value=h)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+
+    row_idx = 2
+    for p in proposals:
+        am = p.created_by
+        am_name = (am.get_full_name() or am.username) if am else ''
+        ws.cell(row=row_idx, column=1, value=p.proposal_number)
+        ws.cell(row=row_idx, column=2, value=p.reference_number or '')
+        ws.cell(row=row_idx, column=3, value=p.subject)
+        ws.cell(row=row_idx, column=4, value=p.customer.company_name if p.customer_id else '')
+        ws.cell(row=row_idx, column=5, value=p.date.strftime('%Y-%m-%d') if p.date else '')
+        ws.cell(row=row_idx, column=6, value=p.currency)
+        ws.cell(row=row_idx, column=7, value=float(p.quoted_total_amount))
+        ws.cell(row=row_idx, column=8, value=float(p.quoted_amount_php))
+        ws.cell(row=row_idx, column=9, value=p.get_status_display())
+        ws.cell(row=row_idx, column=10, value=p.get_approval_status_display())
+        ws.cell(row=row_idx, column=11, value=am_name)
+        ws.cell(row=row_idx, column=12, value='Multi-Option' if p.is_multi_option else 'Single')
+        row_idx += 1
+
+    # Reasonable column widths.
+    widths = [16, 16, 40, 32, 12, 10, 16, 16, 12, 16, 24, 14]
+    for i, w in enumerate(widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    ws.freeze_panes = 'A2'
+
+    from django.utils import timezone as _tz
+    stamp = _tz.localdate().strftime('%Y%m%d')
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = f'attachment; filename="proposals_export_{stamp}.xlsx"'
+    wb.save(response)
+    return response
+
+
 @login_required
 def proposal_list(request):
     proposals = visible_proposals_queryset(request.user)

@@ -4,6 +4,7 @@ from . import multi_option_views
 
 urlpatterns = [
     path('', views.proposal_list, name='proposal_list'),
+    path('export/excel/', views.export_proposals_excel, name='export_proposals_excel'),
     path('approvals/tiers/', views.approval_tier_list, name='approval_tier_list'),
     path('approvals/tiers/create/', views.approval_tier_create, name='approval_tier_create'),
     path('approvals/tiers/<int:pk>/edit/', views.approval_tier_edit, name='approval_tier_edit'),

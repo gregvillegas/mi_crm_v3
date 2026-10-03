@@ -432,3 +432,178 @@ def all_groups_files(request):
     }
     
     return render(request, 'file_sharing/all_files.html', context)
+
+
+# ---------------------------------------------------------------------------
+# Company-wide file share
+#
+# Readable by every authenticated user (all teams/groups). Upload/edit are
+# restricted to executives; delete is allowed for execs and the uploader.
+# ---------------------------------------------------------------------------
+from .models import CompanyFileShare, CompanyFileAccessLog
+from .forms import CompanyFileUploadForm, CompanyFileEditForm
+
+COMPANY_FILE_MANAGER_ROLES = ['admin', 'president', 'gm', 'vp']
+
+
+def user_can_manage_company_files(user):
+    """Who may upload / edit company-wide files."""
+    return getattr(user, 'role', None) in COMPANY_FILE_MANAGER_ROLES
+
+
+def user_can_delete_company_file(user, file_share):
+    """Execs may delete any; the uploader may delete their own."""
+    if user_can_manage_company_files(user):
+        return True
+    return file_share.uploaded_by_id == user.id
+
+
+def log_company_file_access(file_share, user, action, request=None):
+    """Audit company-file access (mirrors log_file_access)."""
+    ip_address = None
+    user_agent = ''
+    if request:
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        ip_address = x_forwarded_for.split(',')[0] if x_forwarded_for else request.META.get('REMOTE_ADDR')
+        user_agent = request.META.get('HTTP_USER_AGENT', '')
+    CompanyFileAccessLog.objects.create(
+        file_share=file_share, user=user, action=action,
+        ip_address=ip_address, user_agent=user_agent,
+    )
+
+
+@login_required
+def company_files(request):
+    """List company-wide shared files — visible to every authenticated user."""
+    files = CompanyFileShare.objects.filter(is_active=True).select_related('uploaded_by')
+
+    filter_form = FileFilterForm(request.GET)
+    if filter_form.is_valid():
+        category = filter_form.cleaned_data.get('category')
+        search = filter_form.cleaned_data.get('search')
+        if category and category != 'all':
+            files = files.filter(category=category)
+        if search:
+            files = files.filter(Q(title__icontains=search) | Q(description__icontains=search))
+
+    paginator = Paginator(files, 24)
+    page_obj = paginator.get_page(request.GET.get('page'))
+
+    context = {
+        'files': page_obj,
+        'filter_form': filter_form,
+        'title': 'Company Shared Files',
+        'total_files': files.count(),
+        'can_manage': user_can_manage_company_files(request.user),
+    }
+    return render(request, 'file_sharing/company_files.html', context)
+
+
+@login_required
+def company_upload(request):
+    """Upload a file to the company-wide share (executives only)."""
+    if not user_can_manage_company_files(request.user):
+        raise Http404("You don't have permission to upload company-wide files.")
+
+    if request.method == 'POST':
+        form = CompanyFileUploadForm(request.POST, request.FILES)
+        if form.is_valid():
+            file_share = form.save(commit=False)
+            file_share.uploaded_by = request.user
+            file_share.save()
+            log_company_file_access(file_share, request.user, 'upload', request)
+            messages.success(request, f'File "{file_share.title}" shared company-wide!')
+            return redirect('company_files')
+        else:
+            messages.error(request, 'Please correct the errors below.')
+    else:
+        form = CompanyFileUploadForm()
+
+    return render(request, 'file_sharing/company_upload.html', {
+        'form': form,
+        'title': 'Upload Company-wide File',
+    })
+
+
+@login_required
+def company_edit(request, file_id):
+    """Edit company file details (executives only)."""
+    file_share = get_object_or_404(CompanyFileShare, id=file_id)
+    if not user_can_manage_company_files(request.user):
+        raise Http404("You don't have permission to edit company-wide files.")
+
+    if request.method == 'POST':
+        form = CompanyFileEditForm(request.POST, instance=file_share)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f'File "{file_share.title}" updated!')
+            return redirect('company_files')
+        else:
+            messages.error(request, 'Please correct the errors below.')
+    else:
+        form = CompanyFileEditForm(instance=file_share)
+
+    return render(request, 'file_sharing/company_upload.html', {
+        'form': form,
+        'title': f'Edit {file_share.title}',
+        'is_edit': True,
+    })
+
+
+@login_required
+def company_download(request, file_id):
+    """Download a company-wide file — any authenticated user."""
+    file_share = get_object_or_404(CompanyFileShare, id=file_id, is_active=True)
+    try:
+        log_company_file_access(file_share, request.user, 'download', request)
+        file_share.download_count += 1
+        file_share.save(update_fields=['download_count'])
+        response = FileResponse(
+            open(file_share.file.path, 'rb'),
+            as_attachment=True,
+            filename=os.path.basename(file_share.file.name),
+        )
+        response['Content-Type'] = file_share.mime_type
+        return response
+    except FileNotFoundError:
+        messages.error(request, 'File not found on server.')
+        return redirect('company_files')
+
+
+@login_required
+def company_view(request, file_id):
+    """View a company-wide file inline — any authenticated user."""
+    file_share = get_object_or_404(CompanyFileShare, id=file_id, is_active=True)
+    try:
+        log_company_file_access(file_share, request.user, 'view', request)
+        response = FileResponse(
+            open(file_share.file.path, 'rb'),
+            as_attachment=False,
+            filename=os.path.basename(file_share.file.name),
+        )
+        response['Content-Type'] = file_share.mime_type
+        response['Content-Disposition'] = f'inline; filename="{os.path.basename(file_share.file.name)}"'
+        return response
+    except FileNotFoundError:
+        messages.error(request, 'File not found on server.')
+        return redirect('company_files')
+
+
+@login_required
+@require_http_methods(["POST"])
+def company_delete(request, file_id):
+    """Delete a company-wide file (execs or the uploader)."""
+    file_share = get_object_or_404(CompanyFileShare, id=file_id)
+    if not user_can_delete_company_file(request.user, file_share):
+        raise Http404("You don't have permission to delete this file.")
+
+    file_title = file_share.title
+    log_company_file_access(file_share, request.user, 'delete', request)
+    if file_share.file and os.path.exists(file_share.file.path):
+        try:
+            os.remove(file_share.file.path)
+        except OSError:
+            pass
+    file_share.delete()
+    messages.success(request, f'File "{file_title}" deleted.')
+    return redirect('company_files')

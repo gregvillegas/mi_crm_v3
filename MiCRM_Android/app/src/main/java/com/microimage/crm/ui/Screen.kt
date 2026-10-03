@@ -56,4 +56,9 @@ sealed class Screen(val route: String) {
     object Settings : Screen("settings/{token}") {
         fun createRoute(token: String) = "settings/$token"
     }
+
+    // Global search (proposals + customers + funnel)
+    object GlobalSearch : Screen("global_search/{token}") {
+        fun createRoute(token: String) = "global_search/$token"
+    }
 }

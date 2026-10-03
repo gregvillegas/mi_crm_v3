@@ -171,7 +171,7 @@ fun DashboardScreen(token: String, navController: NavController) {
                         }
                     },
                     actions = {
-                        IconButton(onClick = { navController.navigate(Screen.CustomerList.createRoute(token)) }) {
+                        IconButton(onClick = { navController.navigate(Screen.GlobalSearch.createRoute(token)) }) {
                             Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.DarkGray)
                         }
                         Box {

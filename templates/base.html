@@ -843,6 +843,8 @@
                                 <i class="fas fa-folder"></i><span>Files</span>
                             </a>
                             <ul class="dropdown-menu shadow" aria-labelledby="filesDropdown">
+                                <li><a class="dropdown-item" href="{% url 'company_files' %}"><i class="fas fa-globe me-2"></i>Company Shared</a></li>
+                                <li><hr class="dropdown-divider"></li>
                                 <li><a class="dropdown-item" href="{% url 'all_files' %}"><i class="fas fa-folder-open me-2"></i>All Group Files</a></li>
                                 <li><a class="dropdown-item" href="{% url 'my_files' %}"><i class="fas fa-user me-2"></i>My Uploaded Files</a></li>
                                 <li><hr class="dropdown-divider"></li>

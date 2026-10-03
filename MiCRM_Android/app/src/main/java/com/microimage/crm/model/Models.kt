@@ -332,6 +332,27 @@ data class DashboardSummary(
     @SerializedName("recent_proposals") val recentProposals: List<Proposal> = emptyList()
 )
 
+// ---------------------------------------------------------------------------
+// Global search (GET /api/v1/search/?q=) — mirrors the web navbar search.
+// Reuses the same list serializers as the proposal/customer/funnel endpoints,
+// so Proposal / CustomerSummary / SalesFunnel decode unchanged.
+// ---------------------------------------------------------------------------
+
+data class SearchCounts(
+    @SerializedName("proposals") val proposals: Int = 0,
+    @SerializedName("customers") val customers: Int = 0,
+    @SerializedName("funnel") val funnel: Int = 0
+)
+
+data class SearchResults(
+    @SerializedName("query") val query: String = "",
+    @SerializedName("proposals") val proposals: List<Proposal> = emptyList(),
+    @SerializedName("customers") val customers: List<CustomerSummary> = emptyList(),
+    @SerializedName("funnel") val funnel: List<SalesFunnel> = emptyList(),
+    @SerializedName("counts") val counts: SearchCounts = SearchCounts(),
+    @SerializedName("total") val total: Int = 0
+)
+
 data class ChoiceOption(
     @SerializedName("value") val value: String,
     @SerializedName("label") val label: String
