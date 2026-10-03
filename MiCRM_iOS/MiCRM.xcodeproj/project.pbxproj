@@ -1,0 +1,504 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0CF7BAF5C87300F8D262C14E /* ActivityListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 073D28E8CF4301F7555141E8 /* ActivityListView.swift */; };
+		0F1C12263807D97C3CC9E6FA /* CustomerListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8215E350F93AE351C7F9C5B /* CustomerListView.swift */; };
+		1890C246504233BBE13067D2 /* MiCRMApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B947D8508635AD8CDFC26860 /* MiCRMApp.swift */; };
+		26F2B55C948532DAED99248C /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20ADB5F6E559B29E2DAF42FA /* Theme.swift */; };
+		2A2E9A6A469FD625D466A73A /* CustomerRequestViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCD85C8F338183DC1DF73408 /* CustomerRequestViews.swift */; };
+		425555097B7FCD3A4D73FF78 /* FunnelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3FF650EBCF29BA2A705885D /* FunnelView.swift */; };
+		6180142D511D7C20C33CF148 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 341FDA92BDF13E40B910C9D6 /* Assets.xcassets */; };
+		6259CD6BF7FFA3728C8EE8CE /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56A9ECF7F1CF6B16F55FB412 /* DashboardView.swift */; };
+		863C9490F624F58337032508 /* ApprovalInboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10901D7A47C66FF20E95060 /* ApprovalInboxView.swift */; };
+		8B80EAE21882CFBEAA306D28 /* CampaignListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1CC1766CCE3B5CEE25CE1AF /* CampaignListView.swift */; };
+		9D0F9E79E5520BC6BA68DB52 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8DCC5C3AC1697C38DE5704C /* Components.swift */; };
+		9FA74122D7F5473A4666F26B /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25DADC04E38ACA85D516017A /* Models.swift */; };
+		AA676F13865FBD6928E3D222 /* Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = 481EBC9D17DD190A384B2021 /* Session.swift */; };
+		ADB71F6F798EE4BDEB1E79C6 /* Platform.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DD4FD8EC320872ADA44787A /* Platform.swift */; };
+		B660C008B1623D4BC317D89E /* ProposalListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46DE4F84C7EF6CAFACDF751 /* ProposalListView.swift */; };
+		C453933FC0DB591A5F3AEC36 /* ActivityCreateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70A084A3842132E504FB4DD9 /* ActivityCreateView.swift */; };
+		CC79D154D6283DF48EC1CE96 /* Formatters.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7320A844303243AFE29C4142 /* Formatters.swift */; };
+		D175C3C21F1199EC8B9FBA6E /* VerifyCodeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36AA7B987D7AB4F9DDE3732A /* VerifyCodeView.swift */; };
+		D2AA205EFE4AE1890D12CB24 /* MoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222171975416F873753B5098 /* MoreView.swift */; };
+		D8DF84D1EC6140CBBFF642D8 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = E782527FB7143045500CBF9B /* APIClient.swift */; };
+		DDDA32239AF6B5576FE948A3 /* CustomerDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54D13E94D566F4AD7E8F09CE /* CustomerDetailView.swift */; };
+		DDE9ECC8F938906797722BDD /* Keychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C32A6A6CB29421A13B1AF8B /* Keychain.swift */; };
+		E43ED05C7ADB6C31F1F91900 /* SignInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5931289C00044A44E419F6AF /* SignInView.swift */; };
+		EF7EA3D1E165E2777B99A9D8 /* ProposalDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 948A92579DBA12B35040FE73 /* ProposalDetailView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		073D28E8CF4301F7555141E8 /* ActivityListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityListView.swift; sourceTree = "<group>"; };
+		20ADB5F6E559B29E2DAF42FA /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		222171975416F873753B5098 /* MoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoreView.swift; sourceTree = "<group>"; };
+		25DADC04E38ACA85D516017A /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		2F6CCC95ED94C13E19638233 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		341FDA92BDF13E40B910C9D6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		36AA7B987D7AB4F9DDE3732A /* VerifyCodeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VerifyCodeView.swift; sourceTree = "<group>"; };
+		481EBC9D17DD190A384B2021 /* Session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Session.swift; sourceTree = "<group>"; };
+		54D13E94D566F4AD7E8F09CE /* CustomerDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomerDetailView.swift; sourceTree = "<group>"; };
+		56A9ECF7F1CF6B16F55FB412 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		5931289C00044A44E419F6AF /* SignInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignInView.swift; sourceTree = "<group>"; };
+		5DD4FD8EC320872ADA44787A /* Platform.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Platform.swift; sourceTree = "<group>"; };
+		6C32A6A6CB29421A13B1AF8B /* Keychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Keychain.swift; sourceTree = "<group>"; };
+		70A084A3842132E504FB4DD9 /* ActivityCreateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityCreateView.swift; sourceTree = "<group>"; };
+		7320A844303243AFE29C4142 /* Formatters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Formatters.swift; sourceTree = "<group>"; };
+		948A92579DBA12B35040FE73 /* ProposalDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProposalDetailView.swift; sourceTree = "<group>"; };
+		A8DCC5C3AC1697C38DE5704C /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
+		B0F761C0468CED83CF686EA2 /* MiCRM.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MiCRM.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B10901D7A47C66FF20E95060 /* ApprovalInboxView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalInboxView.swift; sourceTree = "<group>"; };
+		B947D8508635AD8CDFC26860 /* MiCRMApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiCRMApp.swift; sourceTree = "<group>"; };
+		C46DE4F84C7EF6CAFACDF751 /* ProposalListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProposalListView.swift; sourceTree = "<group>"; };
+		CCD85C8F338183DC1DF73408 /* CustomerRequestViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomerRequestViews.swift; sourceTree = "<group>"; };
+		D3FF650EBCF29BA2A705885D /* FunnelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FunnelView.swift; sourceTree = "<group>"; };
+		E782527FB7143045500CBF9B /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		F1CC1766CCE3B5CEE25CE1AF /* CampaignListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CampaignListView.swift; sourceTree = "<group>"; };
+		F8215E350F93AE351C7F9C5B /* CustomerListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomerListView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		0A53BFF1F288E7BBAAA7AC03 /* MiCRM */ = {
+			isa = PBXGroup;
+			children = (
+				8FD241BC341309E4377C2E74 /* App */,
+				EEB29CA65D9DB5BF6D0C8250 /* Core */,
+				505FFE90BF1E6856BB8A66EE /* DesignSystem */,
+				3FBD1E4174D09A2D27FBE575 /* Features */,
+				8BB2F00880CB3419A8B3CBB9 /* Resources */,
+			);
+			path = MiCRM;
+			sourceTree = "<group>";
+		};
+		10FD0A9A97E376C508ABE1D6 /* Funnel */ = {
+			isa = PBXGroup;
+			children = (
+				D3FF650EBCF29BA2A705885D /* FunnelView.swift */,
+			);
+			path = Funnel;
+			sourceTree = "<group>";
+		};
+		3DE41D2D8F15DF43C1FEF56F /* Activities */ = {
+			isa = PBXGroup;
+			children = (
+				70A084A3842132E504FB4DD9 /* ActivityCreateView.swift */,
+				073D28E8CF4301F7555141E8 /* ActivityListView.swift */,
+			);
+			path = Activities;
+			sourceTree = "<group>";
+		};
+		3FBD1E4174D09A2D27FBE575 /* Features */ = {
+			isa = PBXGroup;
+			children = (
+				3DE41D2D8F15DF43C1FEF56F /* Activities */,
+				B8C61D63450C7195102744BA /* Auth */,
+				89D1F57C4C42072A1768962E /* Campaigns */,
+				931A1503D15AA220EFF68E04 /* Customers */,
+				E88AD93F5B706972DA25C233 /* Dashboard */,
+				10FD0A9A97E376C508ABE1D6 /* Funnel */,
+				7CC54BED82536533C358F04A /* Proposals */,
+				41CE353863CB246F892D2B7E /* Settings */,
+			);
+			path = Features;
+			sourceTree = "<group>";
+		};
+		41CE353863CB246F892D2B7E /* Settings */ = {
+			isa = PBXGroup;
+			children = (
+				222171975416F873753B5098 /* MoreView.swift */,
+			);
+			path = Settings;
+			sourceTree = "<group>";
+		};
+		505FFE90BF1E6856BB8A66EE /* DesignSystem */ = {
+			isa = PBXGroup;
+			children = (
+				A8DCC5C3AC1697C38DE5704C /* Components.swift */,
+				5DD4FD8EC320872ADA44787A /* Platform.swift */,
+				20ADB5F6E559B29E2DAF42FA /* Theme.swift */,
+			);
+			path = DesignSystem;
+			sourceTree = "<group>";
+		};
+		6B082298ACDD7EB45F6099FF /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				B0F761C0468CED83CF686EA2 /* MiCRM.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		6C00C98C6B2FA98C3A295095 = {
+			isa = PBXGroup;
+			children = (
+				0A53BFF1F288E7BBAAA7AC03 /* MiCRM */,
+				6B082298ACDD7EB45F6099FF /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		7CC54BED82536533C358F04A /* Proposals */ = {
+			isa = PBXGroup;
+			children = (
+				B10901D7A47C66FF20E95060 /* ApprovalInboxView.swift */,
+				948A92579DBA12B35040FE73 /* ProposalDetailView.swift */,
+				C46DE4F84C7EF6CAFACDF751 /* ProposalListView.swift */,
+			);
+			path = Proposals;
+			sourceTree = "<group>";
+		};
+		89D1F57C4C42072A1768962E /* Campaigns */ = {
+			isa = PBXGroup;
+			children = (
+				F1CC1766CCE3B5CEE25CE1AF /* CampaignListView.swift */,
+			);
+			path = Campaigns;
+			sourceTree = "<group>";
+		};
+		8BB2F00880CB3419A8B3CBB9 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				341FDA92BDF13E40B910C9D6 /* Assets.xcassets */,
+				2F6CCC95ED94C13E19638233 /* Info.plist */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		8FD241BC341309E4377C2E74 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				B947D8508635AD8CDFC26860 /* MiCRMApp.swift */,
+				481EBC9D17DD190A384B2021 /* Session.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		931A1503D15AA220EFF68E04 /* Customers */ = {
+			isa = PBXGroup;
+			children = (
+				54D13E94D566F4AD7E8F09CE /* CustomerDetailView.swift */,
+				F8215E350F93AE351C7F9C5B /* CustomerListView.swift */,
+				CCD85C8F338183DC1DF73408 /* CustomerRequestViews.swift */,
+			);
+			path = Customers;
+			sourceTree = "<group>";
+		};
+		B8C61D63450C7195102744BA /* Auth */ = {
+			isa = PBXGroup;
+			children = (
+				5931289C00044A44E419F6AF /* SignInView.swift */,
+				36AA7B987D7AB4F9DDE3732A /* VerifyCodeView.swift */,
+			);
+			path = Auth;
+			sourceTree = "<group>";
+		};
+		E88AD93F5B706972DA25C233 /* Dashboard */ = {
+			isa = PBXGroup;
+			children = (
+				56A9ECF7F1CF6B16F55FB412 /* DashboardView.swift */,
+			);
+			path = Dashboard;
+			sourceTree = "<group>";
+		};
+		EEB29CA65D9DB5BF6D0C8250 /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				E782527FB7143045500CBF9B /* APIClient.swift */,
+				7320A844303243AFE29C4142 /* Formatters.swift */,
+				6C32A6A6CB29421A13B1AF8B /* Keychain.swift */,
+				25DADC04E38ACA85D516017A /* Models.swift */,
+			);
+			path = Core;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		2EFBF07EB9E5ED6A4D3ADD05 /* MiCRM */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 6A6A6F30C43BDB8A5772A969 /* Build configuration list for PBXNativeTarget "MiCRM" */;
+			buildPhases = (
+				C03C4A274CB4300D00FCFC88 /* Sources */,
+				DCABE5941A1C156B6A490A3A /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MiCRM;
+			packageProductDependencies = (
+			);
+			productName = MiCRM;
+			productReference = B0F761C0468CED83CF686EA2 /* MiCRM.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		397ACFD5C7317F339D2F540B /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					2EFBF07EB9E5ED6A4D3ADD05 = {
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 69C677FEA3D68A20C6390D2D /* Build configuration list for PBXProject "MiCRM" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 6C00C98C6B2FA98C3A295095;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 6B082298ACDD7EB45F6099FF /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				2EFBF07EB9E5ED6A4D3ADD05 /* MiCRM */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		DCABE5941A1C156B6A490A3A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6180142D511D7C20C33CF148 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		C03C4A274CB4300D00FCFC88 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D8DF84D1EC6140CBBFF642D8 /* APIClient.swift in Sources */,
+				C453933FC0DB591A5F3AEC36 /* ActivityCreateView.swift in Sources */,
+				0CF7BAF5C87300F8D262C14E /* ActivityListView.swift in Sources */,
+				863C9490F624F58337032508 /* ApprovalInboxView.swift in Sources */,
+				8B80EAE21882CFBEAA306D28 /* CampaignListView.swift in Sources */,
+				9D0F9E79E5520BC6BA68DB52 /* Components.swift in Sources */,
+				DDDA32239AF6B5576FE948A3 /* CustomerDetailView.swift in Sources */,
+				0F1C12263807D97C3CC9E6FA /* CustomerListView.swift in Sources */,
+				2A2E9A6A469FD625D466A73A /* CustomerRequestViews.swift in Sources */,
+				6259CD6BF7FFA3728C8EE8CE /* DashboardView.swift in Sources */,
+				CC79D154D6283DF48EC1CE96 /* Formatters.swift in Sources */,
+				425555097B7FCD3A4D73FF78 /* FunnelView.swift in Sources */,
+				DDE9ECC8F938906797722BDD /* Keychain.swift in Sources */,
+				1890C246504233BBE13067D2 /* MiCRMApp.swift in Sources */,
+				9FA74122D7F5473A4666F26B /* Models.swift in Sources */,
+				D2AA205EFE4AE1890D12CB24 /* MoreView.swift in Sources */,
+				ADB71F6F798EE4BDEB1E79C6 /* Platform.swift in Sources */,
+				EF7EA3D1E165E2777B99A9D8 /* ProposalDetailView.swift in Sources */,
+				B660C008B1623D4BC317D89E /* ProposalListView.swift in Sources */,
+				AA676F13865FBD6928E3D222 /* Session.swift in Sources */,
+				E43ED05C7ADB6C31F1F91900 /* SignInView.swift in Sources */,
+				26F2B55C948532DAED99248C /* Theme.swift in Sources */,
+				D175C3C21F1199EC8B9FBA6E /* VerifyCodeView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		373E5671122A5ECE31F17E04 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = J46HC5QV28;
+				INFOPLIST_FILE = MiCRM/Resources/Info.plist;
+				INFOPLIST_KEY_UIStatusBarStyle = UIStatusBarStyleDarkContent;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.microimage.crm;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		4CB96E0018BFF22E05CA573C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Debug;
+		};
+		76743B0EDEB3FDFFD6137510 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Release;
+		};
+		B70DDDDE4828B7EE4B8DADD7 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = J46HC5QV28;
+				INFOPLIST_FILE = MiCRM/Resources/Info.plist;
+				INFOPLIST_KEY_UIStatusBarStyle = UIStatusBarStyleDarkContent;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.microimage.crm;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		69C677FEA3D68A20C6390D2D /* Build configuration list for PBXProject "MiCRM" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4CB96E0018BFF22E05CA573C /* Debug */,
+				76743B0EDEB3FDFFD6137510 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		6A6A6F30C43BDB8A5772A969 /* Build configuration list for PBXNativeTarget "MiCRM" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				373E5671122A5ECE31F17E04 /* Debug */,
+				B70DDDDE4828B7EE4B8DADD7 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 397ACFD5C7317F339D2F540B /* Project object */;
+}
