@@ -48,6 +48,10 @@ struct DashboardView: View {
 
     private func content(_ summary: DashboardSummary) -> some View {
         ScreenScroll {
+            if let quote = summary.quote, !quote.isEmpty {
+                QuoteCard(quote: quote)
+            }
+
             PipelineRail(stages: summary.funnel.stages, totalValue: summary.funnel.totalValue)
 
             needsYou(summary)
@@ -215,5 +219,26 @@ struct MetricRow: View {
                 .foregroundStyle(Palette.ink)
         }
         .padding(.vertical, 13)
+    }
+}
+
+/// Inspiration shown at the top of the dashboard — the same motivational quote
+/// the web app surfaces on login (core/quotes.py).
+struct QuoteCard: View {
+    let quote: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "quote.opening")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Palette.brand)
+            Text(quote)
+                .font(TypeScale.body)
+                .foregroundStyle(Palette.ink)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(Palette.surface, in: RoundedRectangle(cornerRadius: Metrics.cardRadius))
     }
 }

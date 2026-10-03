@@ -321,6 +321,7 @@ data class CustomerRequestStats(
 )
 
 data class DashboardSummary(
+    @SerializedName("quote") val quote: String? = null,
     @SerializedName("user") val user: DashboardUser,
     @SerializedName("customers") val customers: CustomerStats,
     @SerializedName("funnel") val funnel: FunnelStats,

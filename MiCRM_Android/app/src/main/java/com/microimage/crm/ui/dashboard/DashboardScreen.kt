@@ -253,7 +253,7 @@ fun DashboardScreen(token: String, navController: NavController) {
                 }
             }
         ) { paddingValues ->
-            Box(modifier = Modifier.padding(paddingValues).fillMaxSize().background(Color(0xFFF8FAFC))) {
+            Box(modifier = Modifier.padding(paddingValues).fillMaxSize().background(com.microimage.crm.ui.theme.MiPalette.canvas)) {
                 if (isLoading) {
                     CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = MiRed)
                 } else if (errorMessage != null) {
@@ -288,85 +288,201 @@ fun DashboardScreen(token: String, navController: NavController) {
                         }
                     }
                 } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = 16.dp)
-                    ) {
-                        item {
-                            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
-                                Surface(
-                                    modifier = Modifier.size(32.dp).clickable { reloadKey++ },
-                                    shape = CircleShape,
-                                    color = Color(0xFFD9EFFF)
-                                ) {
-                                    Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color(0xFF0369A1), modifier = Modifier.padding(6.dp))
-                                }
-                            }
-                        }
+                    DashboardContent(
+                        summary = summary,
+                        proposals = proposals,
+                        activities = activities,
+                        onApprovals = { navController.navigate(Screen.PendingProposalApprovals.createRoute(token)) },
+                        onRequests = { navController.navigate(Screen.PendingCustomerRequests.createRoute(token)) },
+                        onViewAllProposals = { navController.navigate(Screen.SalesProposal.createRoute(token)) },
+                        onProposalClick = { p -> navController.navigate(Screen.ProposalDetail.createRoute(token, p.id)) }
+                    )
+                }
+            }
+        }
+    }
+}
 
-                        // At-a-glance counters, straight from the server rollup.
-                        summary?.let { data ->
-                            item {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 4.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                ) {
-                                    KpiTile("Customers", data.customers.total.toString(), Modifier.weight(1f))
-                                    KpiTile("Proposals", data.proposals.total.toString(), Modifier.weight(1f))
-                                    KpiTile("To Approve", data.proposals.myPendingApprovals.toString(), Modifier.weight(1f))
-                                    KpiTile("Overdue", data.activities.overdue.toString(), Modifier.weight(1f))
-                                }
-                            }
-                        }
+// iOS-style dashboard body: pipeline rail, "Needs you" prompts, Coming up,
+// Recent proposals, and a "Your book" metrics card. Replaces the old wrapping
+// KPI tiles + horizontal funnel cards.
+@Composable
+private fun DashboardContent(
+    summary: DashboardSummary?,
+    proposals: List<Proposal>,
+    activities: List<SalesActivity>,
+    onApprovals: () -> Unit,
+    onRequests: () -> Unit,
+    onViewAllProposals: () -> Unit,
+    onProposalClick: (Proposal) -> Unit,
+) {
+    val palette = com.microimage.crm.ui.theme.MiPalette
+    val stageColors = mapOf(
+        "quoted" to Color(0xFFD81B60),
+        "closable" to Color(0xFFC77700),
+        "project" to Color(0xFF1B7A4B),
+        "services" to Color(0xFF0056B3),
+    )
 
-                        // Sales Funnel — aggregated per stage
-                        item {
-                            SectionHeader(title = "Sales Funnel", actionText = "MONTHLY VIEW")
-                            val stages = summary?.funnel?.stages ?: emptyList()
-                            LazyRow(
-                                contentPadding = PaddingValues(horizontal = 16.dp),
-                                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                modifier = Modifier.fillMaxWidth().height(170.dp)
+    androidx.compose.foundation.lazy.LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
+    ) {
+        // Inspiration quote (same source as the web login quote: core/quotes.py).
+        val quote = summary?.quote
+        if (!quote.isNullOrBlank()) {
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(palette.surface)
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Icon(
+                        Icons.Default.FormatQuote,
+                        contentDescription = null,
+                        tint = palette.brand,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = quote,
+                        fontSize = 15.sp,
+                        color = palette.ink
+                    )
+                }
+            }
+        }
+
+        // Pipeline rail
+        item {
+            val stages = (summary?.funnel?.stages ?: emptyList()).map {
+                com.microimage.crm.ui.theme.PipelineStage(
+                    label = it.label,
+                    count = it.count,
+                    value = it.value,
+                    color = stageColors[it.stage.lowercase()] ?: palette.inkFaint
+                )
+            }
+            com.microimage.crm.ui.theme.PipelineRail(
+                stages = stages,
+                totalValue = summary?.funnel?.totalValue ?: 0.0
+            )
+        }
+
+        // Needs you — only rendered when something is waiting.
+        val approvalsCount = summary?.proposals?.myPendingApprovals ?: 0
+        val requestsCount = summary?.customerRequests?.awaitingMyReview ?: 0
+        if (approvalsCount > 0 || requestsCount > 0) {
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    com.microimage.crm.ui.theme.SectionHeading(title = "Needs you")
+                    if (approvalsCount > 0) {
+                        com.microimage.crm.ui.theme.ActionPrompt(
+                            count = approvalsCount,
+                            title = if (approvalsCount == 1) "Proposal to approve" else "Proposals to approve",
+                            subtitle = "Waiting on your decision",
+                            icon = Icons.Default.FactCheck,
+                            onClick = onApprovals
+                        )
+                    }
+                    if (requestsCount > 0) {
+                        com.microimage.crm.ui.theme.ActionPrompt(
+                            count = requestsCount,
+                            title = if (requestsCount == 1) "New customer request" else "New customer requests",
+                            subtitle = "Submitted by your team",
+                            icon = Icons.Default.PersonAdd,
+                            onClick = onRequests
+                        )
+                    }
+                }
+            }
+        }
+
+        // Coming up
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                com.microimage.crm.ui.theme.SectionHeading(title = "Coming up")
+                com.microimage.crm.ui.theme.RowCard {
+                    if (activities.isEmpty()) {
+                        Text(
+                            "Nothing scheduled. Log an activity after your next visit.",
+                            fontSize = 15.sp,
+                            color = palette.inkMuted,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp)
+                        )
+                    } else {
+                        activities.take(3).forEachIndexed { index, a ->
+                            if (index > 0) com.microimage.crm.ui.theme.Hairline()
+                            com.microimage.crm.ui.theme.PlainRow(
+                                title = a.title,
+                                subtitle = listOfNotNull(a.customerName, a.scheduledStart).joinToString(" · ")
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Recent proposals
+        if (proposals.isNotEmpty()) {
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    com.microimage.crm.ui.theme.SectionHeading(
+                        title = "Recent proposals",
+                        actionText = "View all",
+                        onAction = onViewAllProposals
+                    )
+                    com.microimage.crm.ui.theme.RowCard {
+                        proposals.take(5).forEachIndexed { index, p ->
+                            if (index > 0) com.microimage.crm.ui.theme.Hairline()
+                            androidx.compose.foundation.layout.Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onProposalClick(p) }
+                                    .padding(vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                items(stages) { stage ->
-                                    FunnelStageCard(stage)
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(p.subject, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = palette.ink, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                    Text(
+                                        listOf(p.proposalNumber, p.customerName).filter { it.isNotBlank() }.joinToString(" · "),
+                                        fontSize = 13.sp, color = palette.inkMuted, maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                        modifier = Modifier.padding(top = 3.dp)
+                                    )
                                 }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    com.microimage.crm.ui.theme.compactCurrency(
+                                        p.totalAmount,
+                                        symbol = if (p.currency.uppercase() == "USD") "$" else "₱"
+                                    ),
+                                    fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = palette.ink
+                                )
                             }
                         }
+                    }
+                }
+            }
+        }
 
-                        // Recent Proposals
-                        item {
-                            SectionHeader(title = "Recent Proposals", actionText = "View All →", onActionClick = {
-                                navController.navigate(Screen.SalesProposal.createRoute(token))
-                            })
-                        }
-                        if (proposals.isNotEmpty()) {
-                            items(proposals.take(3)) { proposal ->
-                                ProposalCard(proposal) {
-                                    navController.navigate(Screen.ProposalDetail.createRoute(token, proposal.id))
-                                }
-                            }
-                        } else {
-                            // Mock items to show design
-                            item { MockProposalCard("PROP-8821", "Enterprise Software Suite", "Global Logistics Inc.", "45,000", "ACCEPTED") }
-                            item { MockProposalCard("PROP-8825", "Annual Maintenance", "SME Solutions Manila", "12,500", "SENT") }
-                        }
-
-                        // Upcoming Activities
-                        item {
-                            SectionHeader(title = "Upcoming Activities")
-                        }
-                        if (activities.isNotEmpty()) {
-                            items(activities.take(3)) { activity ->
-                                ActivityCard(activity)
-                            }
-                        } else {
-                            // Mock items to show design
-                            item { MockActivityCard("24", "Product Demonstration", "Greenfield Residences Group", "14:00", "PRIORITY") }
-                            item { MockActivityCard("25", "Follow-up Call", "Marco Polo Hotel Chain", "10:30", "PENDING") }
-                        }
+        // Your book — metrics that used to wrap as KPI tiles.
+        summary?.let { data ->
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    com.microimage.crm.ui.theme.SectionHeading(title = "Your book")
+                    com.microimage.crm.ui.theme.RowCard {
+                        com.microimage.crm.ui.theme.MetricRow("Customers", data.customers.total.toString())
+                        com.microimage.crm.ui.theme.Hairline()
+                        com.microimage.crm.ui.theme.MetricRow("Proposals this month", data.proposals.thisMonth.toString())
+                        com.microimage.crm.ui.theme.Hairline()
+                        com.microimage.crm.ui.theme.MetricRow("Activities completed this month", data.activities.completedThisMonth.toString())
+                        com.microimage.crm.ui.theme.Hairline()
+                        com.microimage.crm.ui.theme.MetricRow("Overdue activities", data.activities.overdue.toString())
                     }
                 }
             }

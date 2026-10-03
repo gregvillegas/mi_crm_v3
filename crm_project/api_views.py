@@ -713,7 +713,14 @@ class DashboardView(APIView):
         if can_review_customer_requests(user):
             pending_requests = pending_requests_for_reviewer(user).count()
 
+        # A fresh motivational quote each dashboard load — same source the web
+        # app shows on login (core/quotes.py), so mobile gets the same inspiration.
+        import random as _random
+        from core.quotes import MOTIVATIONAL_QUOTES
+        inspiration_quote = _random.choice(MOTIVATIONAL_QUOTES) if MOTIVATIONAL_QUOTES else ''
+
         return Response({
+            'quote': inspiration_quote,
             'user': {
                 'id': user.id,
                 'name': user.get_full_name() or user.username,

@@ -14,6 +14,18 @@
         text-overflow: ellipsis;
         white-space: nowrap;
     }
+    /* Card view: keep the company name AND requirement description each on a
+       single line (ellipsis if too long). truncatechars caps characters but
+       doesn't stop wrapping when the text is still wider than the column, so we
+       also clamp with CSS. Full text remains available via the title tooltip. */
+    .funnel-card-company,
+    .funnel-card-desc {
+        display: block;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
 </style>
 <div class="row mb-4">
     <div class="col">
@@ -364,11 +376,8 @@
                                     </div>
                                 </div>
                                 <div class="col-lg-3 col-md-3">
-                                    <h6 class="mb-1 text-primary">{{ entry.company_name }}</h6>
-                                    <p class="mb-1 text-muted small">{{ entry.requirement_description|truncatechars:50 }}</p>
-                                    {% if entry.customer %}
-                                        <small class="text-success"><i class="fas fa-user"></i> {{ entry.customer.get_full_name }}</small>
-                                    {% endif %}
+                                    <h6 class="mb-1 text-primary funnel-card-company" title="{{ entry.company_name }}">{{ entry.company_name }}</h6>
+                                    <p class="mb-1 text-muted small funnel-card-desc" title="{{ entry.requirement_description }}">{{ entry.requirement_description|truncatechars:50 }}</p>
                                 </div>
                                 <div class="col-lg-2 col-md-2 text-center">
                                     <small class="text-muted d-block">SRP</small>
@@ -378,7 +387,6 @@
                                     <small class="text-muted d-block">Profit</small>
                                     <strong class="{% if entry.profit > 0 %}text-success{% else %}text-danger{% endif %} small">₱{{ entry.profit|floatformat:2|intcomma }}</strong>
                                 </div>
-                                {% if not can_add %}
                                 <div class="col-lg-2 col-md-2 text-center">
                                     <small class="text-muted d-block">Account Manager</small>
                                     {% if entry.salesperson.initials %}
@@ -386,12 +394,8 @@
                                     {% else %}
                                         <span class="badge bg-secondary fs-6 px-3 py-2">{{ entry.salesperson.first_name|first|upper }}{{ entry.salesperson.last_name|first|upper }}{{ entry.salesperson.username|first|upper }}</span>
                                     {% endif %}
-                                    <br><small class="text-muted">@{{ entry.salesperson.username }}</small>
                                 </div>
                                 <div class="col-lg-2 col-md-2 text-end">
-                                {% else %}
-                                <div class="col-lg-4 col-md-4 text-end">
-                                {% endif %}
                                     {% if show_actions %}
                                     <div class="btn-group btn-group-sm" role="group">
                                         <button class="btn btn-warning btn-sm" onclick="moveEntry('{{ entry.id }}', 'closable')" title="Move to Closable">
@@ -524,11 +528,8 @@
                                     </div>
                                 </div>
                                 <div class="col-lg-3 col-md-3">
-                                    <h6 class="mb-1 text-warning">{{ entry.company_name }}</h6>
-                                    <p class="mb-1 text-muted small">{{ entry.requirement_description|truncatechars:50 }}</p>
-                                    {% if entry.customer %}
-                                        <small class="text-success"><i class="fas fa-user"></i> {{ entry.customer.get_full_name }}</small>
-                                    {% endif %}
+                                    <h6 class="mb-1 text-warning funnel-card-company" title="{{ entry.company_name }}">{{ entry.company_name }}</h6>
+                                    <p class="mb-1 text-muted small funnel-card-desc" title="{{ entry.requirement_description }}">{{ entry.requirement_description|truncatechars:50 }}</p>
                                 </div>
                                 <div class="col-lg-2 col-md-2 text-center">
                                     <small class="text-muted d-block">SRP</small>
@@ -538,7 +539,6 @@
                                     <small class="text-muted d-block">Profit</small>
                                     <strong class="{% if entry.profit > 0 %}text-success{% else %}text-danger{% endif %} small">₱{{ entry.profit|floatformat:2|intcomma }}</strong>
                                 </div>
-                                {% if not can_add %}
                                 <div class="col-lg-2 col-md-2 text-center">
                                     <small class="text-muted d-block">Account Manager</small>
                                     {% if entry.salesperson.initials %}
@@ -546,12 +546,8 @@
                                     {% else %}
                                         <span class="badge bg-secondary fs-6 px-3 py-2">{{ entry.salesperson.first_name|first|upper }}{{ entry.salesperson.last_name|first|upper }}{{ entry.salesperson.username|first|upper }}</span>
                                     {% endif %}
-                                    <br><small class="text-muted">@{{ entry.salesperson.username }}</small>
                                 </div>
                                 <div class="col-lg-2 col-md-2 text-end">
-                                {% else %}
-                                <div class="col-lg-4 col-md-4 text-end">
-                                {% endif %}
                                     {% if show_actions %}
                                     <div class="btn-group btn-group-sm" role="group">
                                         <button class="btn btn-success btn-sm" onclick="closeEntry('{{ entry.id }}', true)" title="Mark as Won">
@@ -682,11 +678,8 @@
                                     </div>
                                 </div>
                                 <div class="col-lg-3 col-md-3">
-                                    <h6 class="mb-1 text-success">{{ entry.company_name }}</h6>
-                                    <p class="mb-1 text-muted small">{{ entry.requirement_description|truncatechars:50 }}</p>
-                                    {% if entry.customer %}
-                                        <small class="text-success"><i class="fas fa-user"></i> {{ entry.customer.get_full_name }}</small>
-                                    {% endif %}
+                                    <h6 class="mb-1 text-success funnel-card-company" title="{{ entry.company_name }}">{{ entry.company_name }}</h6>
+                                    <p class="mb-1 text-muted small funnel-card-desc" title="{{ entry.requirement_description }}">{{ entry.requirement_description|truncatechars:50 }}</p>
                                 </div>
                                 <div class="col-lg-2 col-md-2 text-center">
                                     <small class="text-muted d-block">SRP</small>
@@ -696,7 +689,6 @@
                                     <small class="text-muted d-block">Profit</small>
                                     <strong class="{% if entry.profit > 0 %}text-success{% else %}text-danger{% endif %} small">₱{{ entry.profit|floatformat:2|intcomma }}</strong>
                                 </div>
-                                {% if not can_add %}
                                 <div class="col-lg-2 col-md-2 text-center">
                                     <small class="text-muted d-block">Account Manager</small>
                                     {% if entry.salesperson.initials %}
@@ -704,12 +696,8 @@
                                     {% else %}
                                         <span class="badge bg-secondary fs-6 px-3 py-2">{{ entry.salesperson.first_name|first|upper }}{{ entry.salesperson.last_name|first|upper }}{{ entry.salesperson.username|first|upper }}</span>
                                     {% endif %}
-                                    <br><small class="text-muted">@{{ entry.salesperson.username }}</small>
                                 </div>
                                 <div class="col-lg-2 col-md-2 text-end">
-                                {% else %}
-                                <div class="col-lg-4 col-md-4 text-end">
-                                {% endif %}
                                     {% if show_actions %}
                                     <div class="btn-group btn-group-sm" role="group">
                                         <button class="btn btn-warning btn-sm" onclick="moveEntry('{{ entry.id }}', 'closable')" title="Move to Closable">
@@ -851,11 +839,8 @@
                                     </div>
                                 </div>
                                 <div class="col-lg-3 col-md-3">
-                                    <h6 class="mb-1 text-primary">{{ entry.company_name }}</h6>
-                                    <p class="mb-1 text-muted small">{{ entry.requirement_description|truncatechars:50 }}</p>
-                                    {% if entry.customer %}
-                                        <small class="text-success"><i class="fas fa-user"></i> {{ entry.customer.get_full_name }}</small>
-                                    {% endif %}
+                                    <h6 class="mb-1 text-primary funnel-card-company" title="{{ entry.company_name }}">{{ entry.company_name }}</h6>
+                                    <p class="mb-1 text-muted small funnel-card-desc" title="{{ entry.requirement_description }}">{{ entry.requirement_description|truncatechars:50 }}</p>
                                 </div>
                                 <div class="col-lg-2 col-md-2 text-center">
                                     <small class="text-muted d-block">SRP</small>
@@ -865,7 +850,6 @@
                                     <small class="text-muted d-block">Profit</small>
                                     <strong class="{% if entry.profit > 0 %}text-success{% else %}text-danger{% endif %} small">₱{{ entry.profit|floatformat:2|intcomma }}</strong>
                                 </div>
-                                {% if not can_add %}
                                 <div class="col-lg-2 col-md-2 text-center">
                                     <small class="text-muted d-block">Account Manager</small>
                                     {% if entry.salesperson.initials %}
@@ -873,12 +857,8 @@
                                     {% else %}
                                         <span class="badge bg-secondary fs-6 px-3 py-2">{{ entry.salesperson.first_name|first|upper }}{{ entry.salesperson.last_name|first|upper }}{{ entry.salesperson.username|first|upper }}</span>
                                     {% endif %}
-                                    <br><small class="text-muted">@{{ entry.salesperson.username }}</small>
                                 </div>
                                 <div class="col-lg-2 col-md-2 text-end">
-                                {% else %}
-                                <div class="col-lg-4 col-md-4 text-end">
-                                {% endif %}
                                     {% if show_actions %}
                                     <div class="btn-group btn-group-sm" role="group">
                                         <button class="btn btn-warning btn-sm" onclick="moveEntry('{{ entry.id }}', 'closable')" title="Move to Closable">

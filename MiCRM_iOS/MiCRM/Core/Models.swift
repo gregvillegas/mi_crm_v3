@@ -53,6 +53,9 @@ struct DashboardSummary: Decodable {
     let customerRequests: CustomerRequestStats
     let upcomingActivities: [SalesActivity]
     let recentProposals: [ProposalSummary]
+    // Motivational quote from the server (core/quotes.py). Optional so the app
+    // still decodes against an older server build without this field.
+    let quote: String?
 }
 
 struct DashboardUser: Decodable {
