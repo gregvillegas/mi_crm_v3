@@ -8,9 +8,19 @@
     <a href="{% url 'sales_funnel:dashboard' %}" class="btn btn-outline-secondary">Back to Dashboard</a>
 </div>
 
-<div class="alert alert-warning">
-    <i class="fas fa-exclamation-triangle"></i> This will permanently delete active entries in the selected stage for the selected month.
+<div class="alert alert-info">
+    <i class="fas fa-info-circle"></i>
+    This tool only deletes <strong>TEST</strong> entries (those added via
+    <em>Add Test Entry</em>) in the selected stage/month. Real pipeline is never
+    affected — close real deals as Won/Lost instead.
 </div>
+
+{% if requires_code %}
+<div class="alert alert-warning">
+    <i class="fas fa-lock"></i>
+    <strong>Production environment.</strong> A passcode is required to run Clear Stage here.
+</div>
+{% endif %}
 
 <div class="card">
     <div class="card-body">
@@ -30,11 +40,21 @@
                     <label class="form-label">Month</label>
                     <input type="month" name="month" class="form-control" value="{{ default_month }}" required>
                 </div>
-                <div class="col-md-4 d-flex align-items-end">
-                    <button type="submit" class="btn btn-danger"><i class="fas fa-trash"></i> Clear</button>
+                {% if requires_code %}
+                <div class="col-md-4">
+                    <label class="form-label">Passcode</label>
+                    <input type="password" name="clear_code" class="form-control" autocomplete="off"
+                           placeholder="Enter the production passcode" required>
+                </div>
+                {% endif %}
+                <div class="col-12 d-flex">
+                    <button type="submit" class="btn btn-danger"
+                            onclick="return confirm('Delete all TEST entries in this stage for the selected month?');">
+                        <i class="fas fa-trash"></i> Clear Test Entries
+                    </button>
                 </div>
             </div>
         </form>
     </div>
-    </div>
+</div>
 {% endblock %}

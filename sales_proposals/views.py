@@ -2211,6 +2211,8 @@ def update_sales_funnel(proposal):
         funnel.retail = retail_php
         funnel.cost = cost_php
         funnel.requirement_description = proposal.subject
+        # Keep the test flag in sync with the proposal it mirrors.
+        funnel.is_test = proposal.is_test
         funnel.save()
     else:
         # Create new funnel entry linked to this proposal
@@ -2224,5 +2226,7 @@ def update_sales_funnel(proposal):
             salesperson=proposal.created_by,
             customer=proposal.customer,
             deal_outcome='active',
-            proposal=proposal
+            proposal=proposal,
+            # Test proposals create a TEST funnel entry (safely deletable).
+            is_test=proposal.is_test,
         )

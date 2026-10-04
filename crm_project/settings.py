@@ -154,9 +154,18 @@ STATICFILES_DIRS = [BASE_DIR / 'static']
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
-FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024   # 10 MB
-DATA_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024   # 50 MB
+FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024   # 10 MB (stream to disk above this)
+# Max request body Django will accept. Raised to 150 MB so large shared files
+# (e.g. the company-wide Android APK) can be uploaded. NOTE: the front-end web
+# server (nginx) also caps the body via `client_max_body_size` — that must be
+# raised to match or uploads are rejected with HTTP 413 before reaching Django.
+DATA_UPLOAD_MAX_MEMORY_SIZE = 150 * 1024 * 1024  # 150 MB
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 1000
+
+# Passcode required to run the Sales Funnel "Clear Stage" bulk cleanup on
+# PRODUCTION (DEBUG=False). Leave blank to DISABLE Clear Stage in production
+# entirely. Ignored on dev/test machines (DEBUG=True), where it runs freely.
+FUNNEL_CLEAR_STAGE_CODE = config('FUNNEL_CLEAR_STAGE_CODE', default='')
 
 # ---------------------------------------------------------------------------
 # Active Users Widget

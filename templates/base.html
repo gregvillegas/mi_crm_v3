@@ -744,6 +744,7 @@
                                     {% if user.role in 'salesperson,supervisor,asm,avp' %}
                                         <li><hr class="dropdown-divider"></li>
                                         <li><a class="dropdown-item" href="{% url 'sales_funnel:add_entry' %}"><i class="fas fa-plus me-2"></i>Add New Entry</a></li>
+                                        <li><a class="dropdown-item" href="{% url 'sales_funnel:add_test_entry' %}"><i class="fas fa-flask me-2"></i>Add Test Entry</a></li>
                                     {% endif %}
                                     {% if user.role in 'admin,president,gm,vp' %}
                                         <li><hr class="dropdown-divider"></li>

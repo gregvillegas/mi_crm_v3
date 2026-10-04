@@ -110,6 +110,10 @@ class SalesFunnel(models.Model):
         default=False,
         help_text="Whether this deal has been closed (won or lost)"
     )
+    is_test = models.BooleanField(
+        default=False,
+        help_text="Marks a throwaway test/scratch entry. Only test entries may be deleted."
+    )
     deal_outcome = models.CharField(
         max_length=20,
         choices=DEAL_OUTCOMES,

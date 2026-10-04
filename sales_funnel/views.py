@@ -685,6 +685,29 @@ def add_funnel_entry(request):
 
 
 @login_required
+@user_passes_test(can_add_entry)
+def add_test_funnel_entry(request):
+    """
+    Add a throwaway TEST funnel entry. Identical to add_funnel_entry but marks
+    the entry `is_test=True`, so it is the only kind that can later be deleted.
+    Use this for trying things out / demos without polluting real pipeline.
+    """
+    if request.method == 'POST':
+        form = SalesFunnelForm(request.POST, user=request.user)
+        if form.is_valid():
+            entry = form.save(commit=False)
+            entry.salesperson = request.user
+            entry.is_test = True
+            entry.save()
+            messages.success(request, 'TEST funnel entry added. It can be safely deleted later.')
+            return redirect('sales_funnel:dashboard')
+    else:
+        form = SalesFunnelForm(user=request.user)
+
+    return render(request, 'sales_funnel/add_entry.html', {'form': form, 'is_test': True})
+
+
+@login_required
 @user_passes_test(can_access_funnel)
 def funnel_entry_detail(request, entry_id):
     """Read-only detail view for a funnel entry."""
@@ -741,19 +764,36 @@ def edit_funnel_entry(request, entry_id):
 @login_required
 @user_passes_test(can_access_funnel)
 def delete_funnel_entry(request, entry_id):
-    """Delete a funnel entry"""
+    """
+    Delete a funnel entry.
+
+    HARD RULE: only entries explicitly flagged as TEST (`is_test=True`) may be
+    deleted. Real pipeline — including won/lost deals and proposal-linked
+    entries — must never be destroyed (that would silently erase revenue from
+    every report). Real deals are ended with Close (Won/Lost) instead.
+    See docs/SALES_FUNNEL_DOCUMENTATION.md.
+    """
     entry = get_object_or_404(SalesFunnel, id=entry_id)
-    
-    # Check permissions
+
+    # Only test entries can be deleted, no matter the role.
+    if not entry.is_test:
+        messages.error(
+            request,
+            'Only TEST funnel entries can be deleted. For a real deal, use '
+            'Close (Won/Lost) — deleting would remove it from reports permanently.'
+        )
+        return redirect('sales_funnel:dashboard')
+
+    # A salesperson may only delete their own (test) entries.
     if request.user.role == 'salesperson' and entry.salesperson != request.user:
         messages.error(request, 'You can only delete your own funnel entries.')
         return redirect('sales_funnel:dashboard')
-    
+
     if request.method == 'POST':
         company_name = entry.company_name
         entry.delete()
-        messages.success(request, f'Funnel entry for "{company_name}" deleted successfully!')
-    
+        messages.success(request, f'Test funnel entry for "{company_name}" deleted successfully!')
+
     return redirect('sales_funnel:dashboard')
 
 
@@ -1348,11 +1388,46 @@ def download_sample_csv(request):
 @login_required
 @user_passes_test(is_exec_admin)
 def clear_stage_entries(request):
-    """Admin/executive-only: clear entries by stage for a given month."""
+    """
+    Admin/executive-only bulk cleanup of a stage for a month.
+
+    Safety model:
+      * It only ever deletes TEST entries (`is_test=True`) — real pipeline is
+        never touched, even here.
+      * On PRODUCTION (settings.DEBUG=False) a passcode must be entered that
+        matches settings.FUNNEL_CLEAR_STAGE_CODE. On a dev/test machine
+        (DEBUG=True) no passcode is required.
+    """
     from calendar import monthrange
+    from django.conf import settings
+
     today = timezone.now().date()
     default_month = today.strftime('%Y-%m')
+    is_production = not settings.DEBUG
+    required_code = (getattr(settings, 'FUNNEL_CLEAR_STAGE_CODE', '') or '').strip()
+
+    def _render(error=None):
+        if error:
+            messages.error(request, error)
+        return render(request, 'sales_funnel/clear_stage.html', {
+            'default_month': default_month,
+            'is_production': is_production,
+            # True only when prod AND an actual code is configured to check against.
+            'requires_code': is_production,
+        })
+
     if request.method == 'POST':
+        # Production gate: require the configured passcode.
+        if is_production:
+            if not required_code:
+                return _render(
+                    'Clear Stage is disabled on production because no '
+                    'FUNNEL_CLEAR_STAGE_CODE is configured. Set it in the server .env to enable.'
+                )
+            submitted = (request.POST.get('clear_code') or '').strip()
+            if submitted != required_code:
+                return _render('Incorrect passcode. Clear Stage was not run.')
+
         stage = request.POST.get('stage')
         month_str = request.POST.get('month') or default_month
         try:
@@ -1361,16 +1436,25 @@ def clear_stage_entries(request):
             end_day = monthrange(year, month)[1]
             end_date = datetime(year, month, end_day).date()
         except Exception:
-            messages.error(request, 'Invalid month format. Use YYYY-MM.')
-            return redirect('sales_funnel:clear_stage')
+            return _render('Invalid month format. Use YYYY-MM.')
         if stage not in ['quoted', 'closable', 'project', 'services']:
-            messages.error(request, 'Invalid stage.')
-            return redirect('sales_funnel:clear_stage')
-        qs = SalesFunnel.objects.filter(stage=stage, date_created__gte=start_date, date_created__lte=end_date)
-        # Only remove active/open entries
-        qs = qs.filter(is_closed=False)
+            return _render('Invalid stage.')
+
+        # Only ever remove TEST, active/open entries — never real pipeline.
+        qs = SalesFunnel.objects.filter(
+            stage=stage,
+            date_created__gte=start_date,
+            date_created__lte=end_date,
+            is_closed=False,
+            is_test=True,
+        )
         count = qs.count()
         qs.delete()
-        messages.success(request, f'Cleared {count} entries from "{dict(SalesFunnel.FUNNEL_STAGES).get(stage)}" for {month_str}.')
+        messages.success(
+            request,
+            f'Cleared {count} TEST entr{"y" if count == 1 else "ies"} from '
+            f'"{dict(SalesFunnel.FUNNEL_STAGES).get(stage)}" for {month_str}.'
+        )
         return redirect('sales_funnel:dashboard')
-    return render(request, 'sales_funnel/clear_stage.html', {'default_month': default_month})
+
+    return _render()

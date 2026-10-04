@@ -378,7 +378,7 @@
                                     </div>
                                 </div>
                                 <div class="col-lg-3 col-md-3">
-                                    <h6 class="mb-1 text-primary funnel-card-company" title="{{ entry.company_name }}">{{ entry.company_name }}</h6>
+                                    <h6 class="mb-1 text-primary funnel-card-company" title="{{ entry.company_name }}">{% if entry.is_test %}<span class="badge bg-dark me-1">TEST</span>{% endif %}{{ entry.company_name }}</h6>
                                     <p class="mb-1 text-muted small funnel-card-desc" title="{{ entry.requirement_description }}">{{ entry.requirement_description|truncatechars:50 }}</p>
                                 </div>
                                 <div class="col-lg-2 col-md-2 text-center">
@@ -406,8 +406,8 @@
                                         <a href="{% url 'sales_funnel:edit_entry' entry.id %}" class="btn btn-outline-primary btn-sm" title="Edit">
                                             <i class="fas fa-edit"></i>
                                         </a>
-                                        {% if can_add or can_edit_all %}
-                                            <button class="btn btn-outline-danger btn-sm" onclick="deleteEntry('{{ entry.id }}')" title="Delete">
+                                        {% if entry.is_test %}
+                                            <button class="btn btn-outline-danger btn-sm" onclick="deleteEntry('{{ entry.id }}')" title="Delete test entry">
                                                 <i class="fas fa-trash"></i>
                                             </button>
                                         {% endif %}
@@ -530,7 +530,7 @@
                                     </div>
                                 </div>
                                 <div class="col-lg-3 col-md-3">
-                                    <h6 class="mb-1 text-warning funnel-card-company" title="{{ entry.company_name }}">{{ entry.company_name }}</h6>
+                                    <h6 class="mb-1 text-warning funnel-card-company" title="{{ entry.company_name }}">{% if entry.is_test %}<span class="badge bg-dark me-1">TEST</span>{% endif %}{{ entry.company_name }}</h6>
                                     <p class="mb-1 text-muted small funnel-card-desc" title="{{ entry.requirement_description }}">{{ entry.requirement_description|truncatechars:50 }}</p>
                                 </div>
                                 <div class="col-lg-2 col-md-2 text-center">
@@ -680,7 +680,7 @@
                                     </div>
                                 </div>
                                 <div class="col-lg-3 col-md-3">
-                                    <h6 class="mb-1 text-success funnel-card-company" title="{{ entry.company_name }}">{{ entry.company_name }}</h6>
+                                    <h6 class="mb-1 text-success funnel-card-company" title="{{ entry.company_name }}">{% if entry.is_test %}<span class="badge bg-dark me-1">TEST</span>{% endif %}{{ entry.company_name }}</h6>
                                     <p class="mb-1 text-muted small funnel-card-desc" title="{{ entry.requirement_description }}">{{ entry.requirement_description|truncatechars:50 }}</p>
                                 </div>
                                 <div class="col-lg-2 col-md-2 text-center">
@@ -708,8 +708,8 @@
                                         <a href="{% url 'sales_funnel:edit_entry' entry.id %}" class="btn btn-outline-primary btn-sm" title="Edit">
                                             <i class="fas fa-edit"></i>
                                         </a>
-                                        {% if can_add or can_edit_all %}
-                                            <button class="btn btn-outline-danger btn-sm" onclick="deleteEntry('{{ entry.id }}')" title="Delete">
+                                        {% if entry.is_test %}
+                                            <button class="btn btn-outline-danger btn-sm" onclick="deleteEntry('{{ entry.id }}')" title="Delete test entry">
                                                 <i class="fas fa-trash"></i>
                                             </button>
                                         {% endif %}
@@ -841,7 +841,7 @@
                                     </div>
                                 </div>
                                 <div class="col-lg-3 col-md-3">
-                                    <h6 class="mb-1 text-primary funnel-card-company" title="{{ entry.company_name }}">{{ entry.company_name }}</h6>
+                                    <h6 class="mb-1 text-primary funnel-card-company" title="{{ entry.company_name }}">{% if entry.is_test %}<span class="badge bg-dark me-1">TEST</span>{% endif %}{{ entry.company_name }}</h6>
                                     <p class="mb-1 text-muted small funnel-card-desc" title="{{ entry.requirement_description }}">{{ entry.requirement_description|truncatechars:50 }}</p>
                                 </div>
                                 <div class="col-lg-2 col-md-2 text-center">
@@ -869,8 +869,8 @@
                                         <a href="{% url 'sales_funnel:edit_entry' entry.id %}" class="btn btn-outline-primary btn-sm" title="Edit">
                                             <i class="fas fa-edit"></i>
                                         </a>
-                                        {% if can_add or can_edit_all %}
-                                            <button class="btn btn-outline-danger btn-sm" onclick="deleteEntry('{{ entry.id }}')" title="Delete">
+                                        {% if entry.is_test %}
+                                            <button class="btn btn-outline-danger btn-sm" onclick="deleteEntry('{{ entry.id }}')" title="Delete test entry">
                                                 <i class="fas fa-trash"></i>
                                             </button>
                                         {% endif %}

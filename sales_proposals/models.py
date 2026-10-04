@@ -165,6 +165,14 @@ class Proposal(models.Model):
     approval_total_php = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     approval_version = models.IntegerField(default=0)
     
+    # Marks a throwaway test/scratch proposal. Test proposals produce a TEST
+    # funnel entry (see update_sales_funnel) so the whole chain can be safely
+    # deleted later without touching real pipeline.
+    is_test = models.BooleanField(
+        default=False,
+        help_text="Marks a test/scratch proposal. Its funnel entry becomes deletable."
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

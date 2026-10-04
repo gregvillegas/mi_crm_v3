@@ -34,6 +34,12 @@ server {
     server_name micrm.microimageph.com;
     root /var/www/mi_crm;
 
+    # Max upload size. Must be >= Django's DATA_UPLOAD_MAX_MEMORY_SIZE so large
+    # shared files (e.g. the company-wide Android APK) can be uploaded. Without
+    # this, nginx rejects bodies over its 1 MB default with HTTP 413 before the
+    # request reaches the app.
+    client_max_body_size 150M;
+
     # SSL Configuration
     ssl_certificate /etc/letsencrypt/live/micrm.microimageph.com/fullchain.pem; # managed by Certbot
     ssl_certificate_key /etc/letsencrypt/live/micrm.microimageph.com/privkey.pem; # managed by Certbot
