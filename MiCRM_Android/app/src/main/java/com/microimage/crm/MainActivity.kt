@@ -131,6 +131,17 @@ class MainActivity : ComponentActivity() {
                             com.microimage.crm.ui.funnel.SalesFunnelScreen(token, navController)
                         }
                         composable(
+                            route = Screen.FunnelDetail.route,
+                            arguments = listOf(
+                                navArgument("token") { type = NavType.StringType },
+                                navArgument("id") { type = NavType.IntType }
+                            )
+                        ) { backStackEntry ->
+                            val token = backStackEntry.arguments?.getString("token") ?: ""
+                            val id = backStackEntry.arguments?.getInt("id") ?: 0
+                            com.microimage.crm.ui.funnel.FunnelDetailScreen(token, id, navController)
+                        }
+                        composable(
                             route = Screen.SalesActivityCreate.route,
                             arguments = listOf(navArgument("token") { type = NavType.StringType })
                         ) { backStackEntry ->

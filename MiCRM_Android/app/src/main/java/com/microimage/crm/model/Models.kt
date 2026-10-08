@@ -49,7 +49,13 @@ data class SalesFunnel(
     @SerializedName("company_name") val companyName: String,
     @SerializedName("stage_display") val stage: String,
     @SerializedName("retail") val retail: Double,
-    @SerializedName("probability") val probability: Int
+    @SerializedName("probability") val probability: Int,
+    // Extra fields the API already returns; used by the detail screen.
+    @SerializedName("requirement_description") val requirementDescription: String? = null,
+    @SerializedName("cost") val cost: Double? = null,
+    @SerializedName("customer_name") val customerName: String? = null,
+    @SerializedName("expected_close_date") val expectedCloseDate: String? = null,
+    @SerializedName("created_at") val createdAt: String? = null
 )
 
 data class CustomerContact(

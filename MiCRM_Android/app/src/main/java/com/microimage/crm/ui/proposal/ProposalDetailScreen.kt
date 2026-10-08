@@ -1,5 +1,6 @@
 package com.microimage.crm.ui.proposal
 
+import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -8,16 +9,22 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import androidx.navigation.NavController
 import com.microimage.crm.api.RetrofitClient
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
 import com.microimage.crm.model.ApprovalDecisionPayload
 import com.microimage.crm.model.ProposalApprovalStep
 import com.microimage.crm.model.ProposalDetail
@@ -40,9 +47,46 @@ fun ProposalDetailScreen(token: String, proposalId: Int, navController: NavContr
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var isActing by remember { mutableStateOf(false) }
+    var isDownloadingPdf by remember { mutableStateOf(false) }
 
     // null = no dialog; true = approve; false = reject
     var decision by remember { mutableStateOf<Boolean?>(null) }
+
+    fun openPdf() {
+        if (isDownloadingPdf) return
+        isDownloadingPdf = true
+        scope.launch {
+            try {
+                val response = RetrofitClient.apiService.downloadProposalPdf("Token $token", proposalId)
+                if (response.isSuccessful && response.body() != null) {
+                    val fileName = "${proposal?.proposalNumber ?: "proposal_$proposalId"}.pdf"
+                    val uri = withContext(Dispatchers.IO) {
+                        val dir = File(context.cacheDir, "shared_pdfs").apply { mkdirs() }
+                        val file = File(dir, fileName)
+                        response.body()!!.byteStream().use { input ->
+                            file.outputStream().use { output -> input.copyTo(output) }
+                        }
+                        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                    }
+                    val viewIntent = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(uri, "application/pdf")
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    try {
+                        context.startActivity(viewIntent)
+                    } catch (e: android.content.ActivityNotFoundException) {
+                        Toast.makeText(context, "No PDF viewer installed", Toast.LENGTH_LONG).show()
+                    }
+                } else {
+                    Toast.makeText(context, "Could not load PDF: ${response.code()}", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, e.message ?: "PDF download failed", Toast.LENGTH_SHORT).show()
+            } finally {
+                isDownloadingPdf = false
+            }
+        }
+    }
 
     fun loadDetail() {
         isLoading = true
@@ -97,8 +141,10 @@ fun ProposalDetailScreen(token: String, proposalId: Int, navController: NavContr
                 proposal != null -> ProposalDetailContent(
                     proposal = proposal!!,
                     isActing = isActing,
+                    isDownloadingPdf = isDownloadingPdf,
                     onApprove = { decision = true },
                     onReject = { decision = false },
+                    onViewPdf = { openPdf() },
                     onOpenCustomer = { /* optional: navigate to customer detail */ }
                 )
             }
@@ -143,8 +189,10 @@ fun ProposalDetailScreen(token: String, proposalId: Int, navController: NavContr
 private fun ProposalDetailContent(
     proposal: ProposalDetail,
     isActing: Boolean,
+    isDownloadingPdf: Boolean,
     onApprove: () -> Unit,
     onReject: () -> Unit,
+    onViewPdf: () -> Unit,
     onOpenCustomer: () -> Unit
 ) {
     val symbol = if (proposal.currency.uppercase() == "USD") "$" else "₱"
@@ -188,6 +236,24 @@ private fun ProposalDetailContent(
                 if (proposal.statusDisplay.isNotBlank()) {
                     StatusTag(text = proposal.statusDisplay, color = MiPalette.inkMuted)
                 }
+            }
+        }
+
+        // View PDF — downloads the rendered quotation and opens it in a viewer.
+        OutlinedButton(
+            onClick = onViewPdf,
+            enabled = !isDownloadingPdf,
+            modifier = Modifier.fillMaxWidth().height(50.dp),
+            shape = RoundedCornerShape(10.dp)
+        ) {
+            if (isDownloadingPdf) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), color = MiPalette.brand, strokeWidth = 2.dp)
+                Spacer(modifier = Modifier.width(10.dp))
+                Text("Preparing PDF…", color = MiPalette.ink)
+            } else {
+                Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = MiPalette.brand)
+                Spacer(modifier = Modifier.width(10.dp))
+                Text("View PDF", color = MiPalette.ink, fontWeight = FontWeight.SemiBold)
             }
         }
 

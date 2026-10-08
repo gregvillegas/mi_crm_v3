@@ -41,6 +41,9 @@ sealed class Screen(val route: String) {
     object SalesFunnel : Screen("sales_funnel/{token}") {
         fun createRoute(token: String) = "sales_funnel/$token"
     }
+    object FunnelDetail : Screen("funnel_detail/{token}/{id}") {
+        fun createRoute(token: String, id: Int) = "funnel_detail/$token/$id"
+    }
     object SalesActivityCreate : Screen("sales_activity_create/{token}") {
         fun createRoute(token: String) = "sales_activity_create/$token"
     }

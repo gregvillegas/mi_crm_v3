@@ -67,20 +67,25 @@ struct FunnelView: View {
                     RowCard {
                         ForEach(Array(model.entries.enumerated()), id: \.element.id) { index, entry in
                             if index > 0 { Hairline() }
-                            PlainRow(
-                                title: entry.companyName,
-                                subtitle: entry.requirementDescription,
-                                accent: entry.style.color
-                            ) {
-                                VStack(alignment: .trailing, spacing: 4) {
-                                    Text(Format.compactCurrency(entry.retailValue))
-                                        .font(TypeScale.figureSmall())
-                                        .foregroundStyle(Palette.ink)
-                                    Text(entry.stageDisplay)
-                                        .font(TypeScale.micro)
-                                        .foregroundStyle(entry.style.color)
+                            NavigationLink {
+                                FunnelDetailView(entry: entry)
+                            } label: {
+                                PlainRow(
+                                    title: entry.companyName,
+                                    subtitle: entry.requirementDescription,
+                                    accent: entry.style.color
+                                ) {
+                                    VStack(alignment: .trailing, spacing: 4) {
+                                        Text(Format.compactCurrency(entry.retailValue))
+                                            .font(TypeScale.figureSmall())
+                                            .foregroundStyle(Palette.ink)
+                                        Text(entry.stageDisplay)
+                                            .font(TypeScale.micro)
+                                            .foregroundStyle(entry.style.color)
+                                    }
                                 }
                             }
+                            .buttonStyle(.plain)
                         }
                     }
                 }

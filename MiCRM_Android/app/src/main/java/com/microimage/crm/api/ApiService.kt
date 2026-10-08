@@ -66,6 +66,12 @@ interface ApiService {
         @Query("stage") stage: String? = null
     ): Response<List<SalesFunnel>>
 
+    @GET("funnel/{id}/")
+    suspend fun getFunnelDetail(
+        @Header("Authorization") token: String,
+        @Path("id") entryId: Int
+    ): Response<SalesFunnel>
+
     @GET("customers/")
     suspend fun getCustomers(
         @Header("Authorization") token: String,

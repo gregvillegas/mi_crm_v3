@@ -59,9 +59,13 @@ class SalesFunnelViewSet(viewsets.ReadOnlyModelViewSet):
     pagination_class = OptionalPageNumberPagination
 
     def get_queryset(self):
-        qs = visible_funnel_queryset(self.request.user).select_related(
-            'customer', 'salesperson', 'proposal'
-        )
+        # Match the web funnel dashboard/stage pages: only active, open entries.
+        # Closed (won/lost) and inactive deals belong to Deals History, not the
+        # live pipeline, so excluding them keeps the app's lists and the
+        # dashboard tiles consistent with the website.
+        qs = visible_funnel_queryset(self.request.user).filter(
+            is_active=True, is_closed=False
+        ).select_related('customer', 'salesperson', 'proposal')
         stage = self.request.query_params.get('stage')
         if stage:
             qs = qs.filter(stage=stage)
@@ -659,7 +663,12 @@ class DashboardView(APIView):
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
         customers = get_visible_customer_queryset(user)
-        funnel = visible_funnel_queryset(user)
+        # Pipeline figures must mirror the web dashboard, which only counts
+        # active, open entries. Without this filter the mobile tiles also summed
+        # closed (won/lost) and inactive deals, inflating the stage counts,
+        # per-stage values, and the grand total so they no longer tallied with
+        # the website.
+        funnel = visible_funnel_queryset(user).filter(is_active=True, is_closed=False)
         proposals = get_visible_proposal_queryset(user)
         activities = get_visible_activity_queryset(user)
 

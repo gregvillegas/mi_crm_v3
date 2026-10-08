@@ -21,6 +21,7 @@
 		9FA74122D7F5473A4666F26B /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25DADC04E38ACA85D516017A /* Models.swift */; };
 		AA676F13865FBD6928E3D222 /* Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = 481EBC9D17DD190A384B2021 /* Session.swift */; };
 		ADB71F6F798EE4BDEB1E79C6 /* Platform.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DD4FD8EC320872ADA44787A /* Platform.swift */; };
+		B44221E62FFB652015697C15 /* FunnelDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0ABE57762E1E2006D6D1FE0 /* FunnelDetailView.swift */; };
 		B660C008B1623D4BC317D89E /* ProposalListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46DE4F84C7EF6CAFACDF751 /* ProposalListView.swift */; };
 		C453933FC0DB591A5F3AEC36 /* ActivityCreateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70A084A3842132E504FB4DD9 /* ActivityCreateView.swift */; };
 		CC79D154D6283DF48EC1CE96 /* Formatters.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7320A844303243AFE29C4142 /* Formatters.swift */; };
@@ -57,6 +58,7 @@
 		C46DE4F84C7EF6CAFACDF751 /* ProposalListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProposalListView.swift; sourceTree = "<group>"; };
 		CCD85C8F338183DC1DF73408 /* CustomerRequestViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomerRequestViews.swift; sourceTree = "<group>"; };
 		D3FF650EBCF29BA2A705885D /* FunnelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FunnelView.swift; sourceTree = "<group>"; };
+		E0ABE57762E1E2006D6D1FE0 /* FunnelDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FunnelDetailView.swift; sourceTree = "<group>"; };
 		E782527FB7143045500CBF9B /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		F1CC1766CCE3B5CEE25CE1AF /* CampaignListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CampaignListView.swift; sourceTree = "<group>"; };
 		F8215E350F93AE351C7F9C5B /* CustomerListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomerListView.swift; sourceTree = "<group>"; };
@@ -78,6 +80,7 @@
 		10FD0A9A97E376C508ABE1D6 /* Funnel */ = {
 			isa = PBXGroup;
 			children = (
+				E0ABE57762E1E2006D6D1FE0 /* FunnelDetailView.swift */,
 				D3FF650EBCF29BA2A705885D /* FunnelView.swift */,
 			);
 			path = Funnel;
@@ -296,6 +299,7 @@
 				2A2E9A6A469FD625D466A73A /* CustomerRequestViews.swift in Sources */,
 				6259CD6BF7FFA3728C8EE8CE /* DashboardView.swift in Sources */,
 				CC79D154D6283DF48EC1CE96 /* Formatters.swift in Sources */,
+				B44221E62FFB652015697C15 /* FunnelDetailView.swift in Sources */,
 				425555097B7FCD3A4D73FF78 /* FunnelView.swift in Sources */,
 				DDE9ECC8F938906797722BDD /* Keychain.swift in Sources */,
 				1890C246504233BBE13067D2 /* MiCRMApp.swift in Sources */,
@@ -367,7 +371,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -387,7 +391,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -434,7 +438,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = "";
 				ENABLE_NS_ASSERTIONS = NO;
@@ -448,7 +452,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
