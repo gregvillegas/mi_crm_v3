@@ -336,6 +336,8 @@ class CustomerHistory(models.Model):
         ('field_updated', 'Field Updated'),
         ('deal_won', 'Deal Marked Won'),
         ('deal_lost', 'Deal Marked Lost'),
+        ('funnel_entry_removed', 'Funnel Entry Removed'),
+        ('funnel_entry_restored', 'Funnel Entry Restored'),
     ]
     
     customer = models.ForeignKey(
@@ -438,6 +440,53 @@ class CustomerHistory(models.Model):
             ip_address=ip_address,
             user_agent=user_agent or ''
         )
+
+    @property
+    def action_icon(self):
+        """FontAwesome icon for this history action (used by the timeline badge)."""
+        icons = {
+            'created': 'fas fa-plus-circle',
+            'updated': 'fas fa-edit',
+            'vip_enabled': 'fas fa-star',
+            'vip_disabled': 'far fa-star',
+            'activated': 'fas fa-toggle-on',
+            'deactivated': 'fas fa-toggle-off',
+            'salesperson_assigned': 'fas fa-user-plus',
+            'salesperson_changed': 'fas fa-user-edit',
+            'salesperson_removed': 'fas fa-user-minus',
+            'restored': 'fas fa-undo',
+            'imported': 'fas fa-file-import',
+            'field_updated': 'fas fa-pencil-alt',
+            'deal_won': 'fas fa-trophy',
+            'deal_lost': 'fas fa-heart-crack',
+            'funnel_entry_removed': 'fas fa-box-archive',
+            'funnel_entry_restored': 'fas fa-rotate-left',
+        }
+        return icons.get(self.action, 'fas fa-circle')
+
+    @property
+    def action_color(self):
+        """Bootstrap contextual color for this history action's badge."""
+        colors = {
+            'created': 'success',
+            'updated': 'primary',
+            'vip_enabled': 'warning',
+            'vip_disabled': 'secondary',
+            'activated': 'success',
+            'deactivated': 'danger',
+            'salesperson_assigned': 'info',
+            'salesperson_changed': 'warning',
+            'salesperson_removed': 'secondary',
+            'restored': 'info',
+            'imported': 'primary',
+            'field_updated': 'secondary',
+            'deal_won': 'success',
+            'deal_lost': 'danger',
+            'funnel_entry_removed': 'warning',
+            'funnel_entry_restored': 'info',
+        }
+        return colors.get(self.action, 'secondary')
+
 
 class DelinquencyRecord(models.Model):
     STATUS_CHOICES = [

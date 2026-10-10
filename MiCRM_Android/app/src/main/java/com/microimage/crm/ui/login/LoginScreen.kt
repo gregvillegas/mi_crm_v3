@@ -22,7 +22,10 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.fragment.app.FragmentActivity
 import com.microimage.crm.api.RetrofitClient
+import com.microimage.crm.auth.BiometricAuth
+import com.microimage.crm.auth.SessionStore
 import com.microimage.crm.model.LoginRequest
 import com.microimage.crm.model.MfaVerifyRequest
 import com.microimage.crm.ui.theme.MiBgGradientEnd
@@ -32,7 +35,11 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LoginScreen(onLoginSuccess: (String) -> Unit) {
+fun LoginScreen(
+    activity: FragmentActivity,
+    sessionStore: SessionStore,
+    onLoginSuccess: (String) -> Unit,
+) {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var serverAddress by remember { mutableStateOf(RetrofitClient.DEFAULT_HOST) }
@@ -48,8 +55,56 @@ fun LoginScreen(onLoginSuccess: (String) -> Unit) {
     var mfaError by remember { mutableStateOf<String?>(null) }
     var isVerifying by remember { mutableStateOf(false) }
 
+    // When a login succeeds and the device supports biometrics, offer to enable
+    // biometric unlock before proceeding to the dashboard.
+    var pendingToken by remember { mutableStateOf<String?>(null) }
+
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+
+    // Called with a fresh token from either the direct or the MFA path. Offers
+    // the biometric opt-in if the hardware supports it; otherwise proceeds.
+    fun handleToken(token: String) {
+        if (BiometricAuth.canAuthenticate(activity)) {
+            pendingToken = token
+        } else {
+            onLoginSuccess(token)
+        }
+    }
+
+    pendingToken?.let { token ->
+        AlertDialog(
+            onDismissRequest = { },
+            icon = { Icon(Icons.Default.Fingerprint, contentDescription = null, tint = MiRed) },
+            title = { Text("Enable biometric login?", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "Next time, unlock MiCRM with your fingerprint, face, or screen lock — " +
+                        "no password or code needed on this device.",
+                    fontSize = 14.sp,
+                    color = Color.Gray
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        sessionStore.saveSession(token, username.trim(), serverAddress.trim())
+                        pendingToken = null
+                        onLoginSuccess(token)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MiRed)
+                ) { Text("Enable") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    // User declined — make sure no stale session lingers.
+                    sessionStore.clear()
+                    pendingToken = null
+                    onLoginSuccess(token)
+                }) { Text("Not now") }
+            }
+        )
+    }
 
     mfaToken?.let { pendingToken ->
         MfaCodeDialog(
@@ -68,7 +123,7 @@ fun LoginScreen(onLoginSuccess: (String) -> Unit) {
                         val token = response.body()?.token
                         if (response.isSuccessful && token != null) {
                             mfaToken = null
-                            onLoginSuccess(token)
+                            handleToken(token)
                         } else {
                             mfaError = response.body()?.detail
                                 ?: "That code is not valid. Please try again."
@@ -250,7 +305,7 @@ fun LoginScreen(onLoginSuccess: (String) -> Unit) {
                                             mfaError = null
                                         }
                                         response.isSuccessful && body?.token != null -> {
-                                            onLoginSuccess(body.token)
+                                            handleToken(body.token)
                                         }
                                         // Site requires MFA but this account has not enrolled yet.
                                         response.code() == 403 -> {

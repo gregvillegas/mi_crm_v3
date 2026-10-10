@@ -20,8 +20,8 @@ android {
         applicationId = "com.microimage.crm"
         minSdk = 26
         targetSdk = 34
-        versionCode = 6
-        versionName = "1.5"
+        versionCode = 7
+        versionName = "1.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -84,6 +84,15 @@ dependencies {
     
     // Navigation
     implementation("androidx.navigation:navigation-compose:2.7.5")
+
+    // Biometric unlock + Keystore-encrypted token storage
+    implementation("androidx.biometric:biometric:1.1.0")
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
+    // Provides an AppCompat/Material3 app theme — required because the host
+    // Activity is now a FragmentActivity (needed by BiometricPrompt), which
+    // must run under an AppCompat-derived theme.
+    implementation("com.google.android.material:material:1.11.0")
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")

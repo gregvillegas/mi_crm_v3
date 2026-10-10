@@ -1,6 +1,7 @@
 package com.microimage.crm.ui
 
 sealed class Screen(val route: String) {
+    object Unlock : Screen("unlock")
     object Login : Screen("login")
     object Dashboard : Screen("dashboard/{token}") {
         fun createRoute(token: String) = "dashboard/$token"

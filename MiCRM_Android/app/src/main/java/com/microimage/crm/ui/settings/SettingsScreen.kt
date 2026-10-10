@@ -15,9 +15,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.microimage.crm.api.RetrofitClient
+import com.microimage.crm.auth.SessionStore
 import com.microimage.crm.ui.Screen
 import kotlinx.coroutines.launch
 
@@ -25,14 +27,18 @@ import kotlinx.coroutines.launch
 @Composable
 fun SettingsScreen(token: String, navController: NavController) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val sessionStore = remember { SessionStore(context) }
     var showSignOutDialog by remember { mutableStateOf(false) }
     var isSigningOut by remember { mutableStateOf(false) }
 
     // Revoking the token server-side is best effort — an offline device or an
-    // older server build must not leave the user stuck on this screen.
+    // older server build must not leave the user stuck on this screen. The local
+    // encrypted session is always cleared so biometric unlock won't resurrect it.
     fun signOut() {
         if (isSigningOut) return
         isSigningOut = true
+        sessionStore.clear()
         scope.launch {
             runCatching { RetrofitClient.apiService.logout("Token $token") }
             navController.navigate(Screen.Login.route) {

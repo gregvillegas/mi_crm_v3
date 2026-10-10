@@ -112,6 +112,13 @@
                             <a href="{% url 'sales_funnel:entry_detail' entry.id %}" class="btn btn-sm btn-outline-info" title="View">
                                 <i class="fas fa-eye"></i>
                             </a>
+                            {% if can_remove and not entry.is_test %}
+                            <button type="button" class="btn btn-sm btn-outline-warning"
+                                    onclick="removeEntry('{{ entry.id }}', '{{ entry.company_name|escapejs }}')"
+                                    title="Remove from pipeline (needs reason)">
+                                <i class="fas fa-box-archive"></i>
+                            </button>
+                            {% endif %}
                         </td>
                     </tr>
                     {% empty %}
@@ -137,5 +144,77 @@
         </div>
     </div>
 </div>
+
+<!-- CSRF token for the fetch() POST below -->
+{% csrf_token %}
+
+<!-- Remove-from-pipeline modal: a reason is REQUIRED and kept for supervisor review. -->
+<div class="modal fade" id="removeReasonModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-warning">
+                <h5 class="modal-title"><i class="fas fa-box-archive me-2"></i>Remove from Pipeline</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-2">
+                    Removing <strong id="removeReasonCompany">this entry</strong> from the active pipeline.
+                    It won't count toward pipeline totals, but it is <strong>kept for supervisor review</strong>
+                    and can be restored. Please say why you're removing it (e.g. customer changed requirements,
+                    a new proposal will replace this).
+                </p>
+                <label for="removeReasonInput" class="form-label fw-semibold">Reason <span class="text-danger">*</span></label>
+                <textarea id="removeReasonInput" class="form-control" rows="4"
+                          placeholder="e.g. Customer revised requirements; creating a fresh proposal; this quote is superseded…"></textarea>
+                <div id="removeReasonError" class="text-danger small mt-1 d-none">Please enter a reason before removing this entry.</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-warning" id="removeReasonConfirm">
+                    <i class="fas fa-box-archive me-1"></i>Remove
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Remove (soft-delete / archive) a real entry — reason required, kept for review.
+function removeEntry(entryId, companyName) {
+    const modalEl = document.getElementById('removeReasonModal');
+    const input = document.getElementById('removeReasonInput');
+    const errorEl = document.getElementById('removeReasonError');
+    const companyEl = document.getElementById('removeReasonCompany');
+    const confirmBtn = document.getElementById('removeReasonConfirm');
+
+    input.value = '';
+    errorEl.classList.add('d-none');
+    companyEl.textContent = companyName || 'this entry';
+
+    const modal = new bootstrap.Modal(modalEl);
+    const freshBtn = confirmBtn.cloneNode(true);
+    confirmBtn.parentNode.replaceChild(freshBtn, confirmBtn);
+    freshBtn.addEventListener('click', () => {
+        const reason = input.value.trim();
+        if (!reason) {
+            errorEl.classList.remove('d-none');
+            input.focus();
+            return;
+        }
+        modal.hide();
+        fetch(`/funnel/remove/${entryId}/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: `remove_reason=${encodeURIComponent(reason)}`
+        })
+        .then(response => { if (response.redirected || response.ok) location.reload(); })
+        .catch(() => { alert('An error occurred while removing the entry.'); });
+    });
+    modal.show();
+}
+</script>
 
 {% endblock %}

@@ -1,0 +1,115 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block content %}
+
+<!-- Header with Back button -->
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
+    <div class="d-flex align-items-center gap-3">
+        <a href="{% url 'sales_funnel:dashboard' %}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i> Back to Dashboard
+        </a>
+        <h2 class="mb-0">
+            <span class="badge bg-warning text-dark"><i class="fas fa-box-archive me-1"></i>REMOVED</span>
+            <span class="ms-2">Removed Funnel Entries</span>
+        </h2>
+    </div>
+</div>
+
+<div class="alert alert-info d-flex align-items-start gap-2">
+    <i class="fas fa-circle-info mt-1"></i>
+    <div>
+        These entries were removed from the active pipeline (for example, the customer changed
+        requirements). They are kept here with the reason for supervisor review and
+        <strong>do not count toward pipeline totals</strong>.
+        {% if can_restore %}You can restore an entry to put it back in the pipeline.{% endif %}
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="fas fa-box-archive me-2"></i>Removed Entries</h5>
+        <span class="badge bg-light text-dark">{{ entry_count }} entr{{ entry_count|pluralize:"y,ies" }}</span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width: 110px;">Removed</th>
+                        <th>Company</th>
+                        <th>Reason</th>
+                        <th class="text-center" style="width: 130px;">Account Manager</th>
+                        <th class="text-center" style="width: 130px;">Removed By</th>
+                        <th class="text-center" style="width: 130px;">SRP</th>
+                        <th class="text-center" style="width: 140px;">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for entry in entries %}
+                    <tr>
+                        <td class="small">
+                            {% if entry.removed_at %}
+                                {{ entry.removed_at|date:"M d, Y" }}<br>
+                                <span class="text-muted">{{ entry.removed_at|date:"H:i" }}</span>
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="fw-semibold" title="{{ entry.company_name }}">
+                                <a href="{% url 'sales_funnel:entry_detail' entry.id %}" class="text-decoration-none">{{ entry.company_name|truncatechars:45 }}</a>
+                            </div>
+                            <div class="text-muted small" title="{{ entry.requirement_description }}">{{ entry.requirement_description|truncatechars:60 }}</div>
+                        </td>
+                        <td>
+                            <div class="px-2 py-1 rounded border-start border-warning border-3 bg-warning-subtle">
+                                <small class="text-dark">{{ entry.removed_reason|default:"—" }}</small>
+                            </div>
+                        </td>
+                        <td class="text-center">
+                            {% if entry.salesperson.initials %}
+                                <span class="badge bg-primary px-3 py-2">{{ entry.salesperson.initials }}</span>
+                            {% else %}
+                                <span class="badge bg-secondary px-3 py-2">{{ entry.salesperson.username|slice:":3"|upper }}</span>
+                            {% endif %}
+                            <br><small class="text-muted">@{{ entry.salesperson.username }}</small>
+                        </td>
+                        <td class="text-center small">
+                            {% if entry.removed_by %}
+                                {{ entry.removed_by.get_full_name|default:entry.removed_by.username }}
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center"><strong class="text-muted small">₱{{ entry.retail|floatformat:2|intcomma }}</strong></td>
+                        <td class="text-center">
+                            <a href="{% url 'sales_funnel:entry_detail' entry.id %}" class="btn btn-sm btn-outline-info" title="View">
+                                <i class="fas fa-eye"></i>
+                            </a>
+                            {% if can_restore %}
+                            <form method="post" action="{% url 'sales_funnel:restore_entry' entry.id %}" class="d-inline"
+                                  onsubmit="return confirm('Restore this entry back into the active pipeline?');">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-sm btn-outline-success" title="Restore to pipeline">
+                                    <i class="fas fa-rotate-left"></i>
+                                </button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="text-center text-muted py-5">
+                            <i class="fas fa-box-open fa-3x mb-3"></i>
+                            <h6>No removed entries</h6>
+                            <p class="mb-0">Entries removed from the pipeline will appear here for review.</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

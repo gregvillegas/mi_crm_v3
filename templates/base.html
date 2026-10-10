@@ -741,6 +741,7 @@
                                 <ul class="dropdown-menu shadow" aria-labelledby="salesFunnelDropdown">
                                     <li><a class="dropdown-item" href="{% url 'sales_funnel:dashboard' %}"><i class="fas fa-tachometer-alt me-2"></i>Dashboard</a></li>
                                     <li><a class="dropdown-item" href="{% url 'sales_funnel:deals_history' %}"><i class="fas fa-history me-2"></i>Deals History</a></li>
+                                    <li><a class="dropdown-item" href="{% url 'sales_funnel:removed_entries' %}"><i class="fas fa-box-archive me-2"></i>Removed Entries</a></li>
                                     {% if user.role in 'salesperson,supervisor,asm,avp' %}
                                         <li><hr class="dropdown-divider"></li>
                                         <li><a class="dropdown-item" href="{% url 'sales_funnel:add_entry' %}"><i class="fas fa-plus me-2"></i>Add New Entry</a></li>

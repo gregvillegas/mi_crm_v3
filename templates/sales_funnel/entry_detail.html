@@ -94,10 +94,18 @@
                             <span class="text-muted small d-block">Closed</span>
                             {{ entry.is_closed|yesno:"Yes,No" }}
                         </p>
-                        <p class="mb-0">
+                        <p class="{% if entry.deal_outcome == 'lost' and entry.lost_reason %}mb-3{% else %}mb-0{% endif %}">
                             <span class="text-muted small d-block">Closed Date</span>
                             {{ entry.closed_date|date:"M d, Y"|default:"Not closed" }}
                         </p>
+                        {% if entry.deal_outcome == 'lost' and entry.lost_reason %}
+                        <div class="alert alert-danger mb-0 py-2 px-3">
+                            <span class="small fw-semibold d-block mb-1">
+                                <i class="fas fa-heart-crack me-1"></i>Reason Lost
+                            </span>
+                            <span class="small">{{ entry.lost_reason|linebreaksbr }}</span>
+                        </div>
+                        {% endif %}
                     </div>
                 </div>
 

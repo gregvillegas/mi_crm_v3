@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-
-    <style name="Theme.MiCRM" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- AppCompat/Material3-derived theme. Required because MainActivity is now a
+         FragmentActivity (BiometricPrompt needs it), which must run under an
+         AppCompat theme. The actual UI is Compose/Material3, so this only
+         governs the host window chrome. -->
+    <style name="Theme.MiCRM" parent="Theme.Material3.DayNight.NoActionBar" />
 </resources>

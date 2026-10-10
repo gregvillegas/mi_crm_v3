@@ -125,6 +125,34 @@ class SalesFunnel(models.Model):
         blank=True,
         help_text="Date when this deal was closed"
     )
+    lost_reason = models.TextField(
+        blank=True,
+        help_text="Why this deal was lost. Required when marking a deal LOST so "
+                  "the team can learn from it; shown in deal history."
+    )
+
+    # Soft-delete / archive. A real entry is never hard-deleted (that would
+    # erase pipeline/revenue history). Instead it is removed from the active
+    # pipeline by setting is_active=False and recording who/why/when, so a
+    # supervisor can still review it and restore it if needed.
+    removed_reason = models.TextField(
+        blank=True,
+        help_text="Why this entry was removed from the pipeline. Required when "
+                  "removing a real entry; kept for supervisor review."
+    )
+    removed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When this entry was removed from the active pipeline."
+    )
+    removed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='removed_funnel_entries',
+        help_text="The user who removed this entry from the pipeline."
+    )
     
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)

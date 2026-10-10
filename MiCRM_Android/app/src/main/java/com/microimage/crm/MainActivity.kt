@@ -1,27 +1,35 @@
 package com.microimage.crm
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.fragment.app.FragmentActivity
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.microimage.crm.api.RetrofitClient
+import com.microimage.crm.auth.SessionStore
 import com.microimage.crm.ui.Screen
 import com.microimage.crm.ui.dashboard.DashboardScreen
 import com.microimage.crm.ui.login.LoginScreen
+import com.microimage.crm.ui.login.UnlockScreen
 import com.microimage.crm.ui.theme.MiCRMTheme
 import com.microimage.crm.ui.customer.*
 import com.microimage.crm.ui.proposal.*
 import com.microimage.crm.ui.activity.*
 import com.microimage.crm.ui.campaign.*
 
-class MainActivity : ComponentActivity() {
+// FragmentActivity (not ComponentActivity) is required to host AndroidX
+// BiometricPrompt. FragmentActivity extends ComponentActivity, so Compose and
+// everything else continue to work unchanged.
+class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
@@ -30,14 +38,42 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
+                    val activity = this
+                    val context = LocalContext.current
+                    val sessionStore = remember { SessionStore(context) }
                     val navController = rememberNavController()
-                    NavHost(navController = navController, startDestination = Screen.Login.route) {
-                        composable(Screen.Login.route) {
-                            LoginScreen(onLoginSuccess = { token ->
-                                navController.navigate(Screen.Dashboard.createRoute(token)) {
-                                    popUpTo(Screen.Login.route) { inclusive = true }
+
+                    // Start on the Unlock screen. It decides whether to show the
+                    // biometric prompt (remembered session) or jump to Login.
+                    NavHost(navController = navController, startDestination = Screen.Unlock.route) {
+                        composable(Screen.Unlock.route) {
+                            UnlockScreen(
+                                activity = activity,
+                                sessionStore = sessionStore,
+                                onUnlocked = { token ->
+                                    // Point the API client at the host this session belongs to.
+                                    sessionStore.serverHost?.let { RetrofitClient.updateBaseUrl(it) }
+                                    navController.navigate(Screen.Dashboard.createRoute(token)) {
+                                        popUpTo(Screen.Unlock.route) { inclusive = true }
+                                    }
+                                },
+                                onUsePassword = {
+                                    navController.navigate(Screen.Login.route) {
+                                        popUpTo(Screen.Unlock.route) { inclusive = true }
+                                    }
                                 }
-                            })
+                            )
+                        }
+                        composable(Screen.Login.route) {
+                            LoginScreen(
+                                activity = activity,
+                                sessionStore = sessionStore,
+                                onLoginSuccess = { token ->
+                                    navController.navigate(Screen.Dashboard.createRoute(token)) {
+                                        popUpTo(Screen.Login.route) { inclusive = true }
+                                    }
+                                }
+                            )
                         }
                         composable(
                             route = Screen.Dashboard.route,

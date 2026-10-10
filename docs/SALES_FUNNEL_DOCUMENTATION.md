@@ -4,7 +4,11 @@
 **Audience:** admins, managers (AVP/SM/ASM/Supervisor), and whoever maintains the CRM.
 **Status:** As-built documentation (describes current behavior) + recommended workflow.
 
-> **TL;DR on deletion:** Deleting a funnel entry is a **permanent hard delete** with **no audit trail and no undo**. If the entry was a **WON** deal, that revenue/profit **disappears from every quota, dashboard, and executive report**. Use **Close (Won/Lost)** for real deals; reserve **Delete** for genuine mistakes/duplicates. See [§3](#3-what-happens-when-you-delete-a-funnel-entry).
+> **TL;DR on removing entries (current behavior):**
+> - **Real entries can no longer be hard-deleted.** To take a stale real entry out of the pipeline (e.g. the customer changed requirements and a new proposal is coming), use **Remove** — a **soft delete** that requires a **reason**, records **who/when**, drops the entry from pipeline totals, and is **reviewable and restorable** (see [§3a](#3a-remove-soft-delete--restore)). A supervisor review page lists all removed entries.
+> - **Only TEST entries** (`is_test=True`) can be **hard-deleted** (permanent, no undo) — for throwaway/scratch entries.
+> - **Real deals still end with Close (Won/Lost)**, which preserves revenue and writes history.
+> - The permanent-hard-delete behavior described in [§3](#3-what-happens-when-you-delete-a-funnel-entry) below is **historical** — it applied before Remove/soft-delete existed and now only applies to the test-entry hard delete.
 
 ---
 
@@ -97,7 +101,29 @@ entry.delete()   # real DB row removal — NOT a soft delete
 
 2. **Proposal-linked entries resurrect (differently).** Because auto-sync keys off the `proposal` FK, if you delete a proposal-linked entry and then anyone edits/re-saves that proposal, `update_sales_funnel` finds no linked entry and **creates a brand-new `quoted` one** — losing the stage, notes, probability, and outcome of the deleted entry, and re-cluttering the Pink funnel.
 
-> **Bottom line:** "Delete" is only appropriate for **erroneous or duplicate pipeline entries that were never real deals**. For anything that reflects a real outcome, use **Close (Won/Lost)** instead.
+> **Bottom line (historical):** The permanent hard delete above now applies **only to TEST entries**. Real entries use **Remove** (§3a) instead, and real outcomes still use **Close (Won/Lost)**.
+
+---
+
+## 3a. Remove (soft delete) & Restore
+
+This is the current way to take a **real** entry out of the pipeline. It replaces hard-deleting real entries. Implemented in `remove_funnel_entry` / `restore_funnel_entry` / `removed_funnel_entries` (`sales_funnel/views.py`).
+
+**When to use it:** the entry is stale and shouldn't inflate the pipeline — e.g. the customer changed requirements and a fresh proposal will replace this one.
+
+**What Remove does:**
+- Requires a **reason** (a modal in the dashboard enforces it; the server also rejects an empty reason).
+- Sets `is_active=False` and records `removed_reason`, `removed_at`, and `removed_by`. The row is **never destroyed**.
+- The entry immediately **drops out of the dashboard and all pipeline totals** (every pipeline query already filters `is_active=True`).
+- Writes a `CustomerHistory` record (`funnel_entry_removed`, amber badge) with the reason and actor, so it shows on the customer timeline.
+- **Closed (won/lost) deals cannot be removed** — they're part of results history; the view blocks it.
+
+**Review & Restore:**
+- **Removed Entries** page (`sales_funnel:removed_entries`, in the Sales Funnel nav dropdown) lists removed entries with company, reason, who removed it, and when.
+- **Role scoped** via the shared `funnel_scope_q(user)` helper: a salesperson sees their own; supervisor/teamlead/ASM/SM/AVP see their teams'; execs/admin see all.
+- **Restore** (supervisor and above) sets `is_active=True`, clears the `removed_*` fields, and logs a `funnel_entry_restored` history record. The entry returns to the pipeline.
+
+**Permissions:** a salesperson may Remove their **own** active entries; managers/execs may Remove any entry **within their scope** (`_can_manage_funnel_entry`). Restore is limited to supervisor-and-above.
 
 ---
 

@@ -262,6 +262,14 @@
                                     <td>
                                         <strong>{{ deal.company_name }}</strong>
                                         <br><small class="text-muted">{{ deal.requirement_description|truncatechars:50 }}</small>
+                                        {% if deal.lost_reason %}
+                                        <div class="mt-1 px-2 py-1 rounded border-start border-danger border-3 bg-danger-subtle">
+                                            <small class="text-danger-emphasis">
+                                                <i class="fas fa-heart-crack me-1"></i><strong>Why lost:</strong>
+                                                {{ deal.lost_reason }}
+                                            </small>
+                                        </div>
+                                        {% endif %}
                                     </td>
                                     <td>
                                         <span class="text-muted">₱{{ deal.retail|floatformat:0|intcomma }}</span>

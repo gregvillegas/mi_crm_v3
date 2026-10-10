@@ -151,36 +151,46 @@ def visible_funnel_entries(user):
     dashboard and the per-stage pages share one source of truth for visibility.
     """
     base = SalesFunnel.objects.filter(is_active=True, is_closed=False)
+    scope = funnel_scope_q(user)
+    return base if scope is None else base.filter(scope)
 
+
+def funnel_scope_q(user):
+    """
+    Return a Q() expressing which salespeople's funnel entries `user` may see,
+    or None for executives/admins (unrestricted). Shared by visible_funnel_entries
+    and by the removed-entries review page so one role map drives both. Does NOT
+    itself filter on is_active/is_closed — callers decide the lifecycle slice.
+    """
     if user.role == 'salesperson':
-        return base.filter(salesperson=user)
+        return Q(salesperson=user)
     if user.role == 'supervisor':
         groups = Group.objects.filter(supervisor=user)
         sp_ids = TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True)
-        return base.filter(Q(salesperson_id__in=sp_ids) | Q(salesperson=user))
+        return Q(salesperson_id__in=sp_ids) | Q(salesperson=user)
     if user.role == 'teamlead':
         groups = Group.objects.filter(teamlead=user)
         sp_ids = TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True)
-        return base.filter(salesperson_id__in=sp_ids)
+        return Q(salesperson_id__in=sp_ids)
     if user.role == 'asm':
         groups = asm_scoped_groups(user)
         sp_ids = list(TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True))
         supervisor_ids = list(groups.filter(supervisor__isnull=False).values_list('supervisor_id', flat=True))
-        return base.filter(Q(salesperson_id__in=sp_ids + supervisor_ids) | Q(salesperson=user))
+        return Q(salesperson_id__in=sp_ids + supervisor_ids) | Q(salesperson=user)
     if user.role == 'sm':
         groups = user.sm_groups.all()
         sp_ids = list(TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True))
         supervisor_ids = list(Group.objects.filter(id__in=groups.values_list('id', flat=True), supervisor__isnull=False).values_list('supervisor_id', flat=True))
-        return base.filter(Q(salesperson_id__in=sp_ids + supervisor_ids) | Q(salesperson=user))
+        return Q(salesperson_id__in=sp_ids + supervisor_ids) | Q(salesperson=user)
     if user.role == 'avp':
         teams = Team.objects.filter(avp=user)
         groups = Group.objects.filter(team__in=teams)
         sp_ids = list(TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True))
         asm_ids = list(teams.exclude(asm__isnull=True).values_list('asm_id', flat=True))
         supervisor_ids = list(Group.objects.filter(team__in=teams, supervisor__isnull=False).values_list('supervisor_id', flat=True))
-        return base.filter(Q(salesperson_id__in=sp_ids + asm_ids + supervisor_ids) | Q(salesperson=user))
+        return Q(salesperson_id__in=sp_ids + asm_ids + supervisor_ids) | Q(salesperson=user)
     # Executives and admins can see all entries
-    return base
+    return None
 
 
 @login_required
@@ -214,6 +224,13 @@ def funnel_stage_detail(request, stage):
         'total_profit': _sum_entry_profit(entries),
         'can_add': can_add_entry(user),
         'can_edit_all': user.role in ['admin', 'supervisor', 'asm', 'sm', 'avp'],
+        # Everyone listed here is already within the user's scope (the list is
+        # built from visible_funnel_entries), so a role check is sufficient to
+        # offer Remove. Closed deals are excluded from this list already.
+        'can_remove': user.role in [
+            'salesperson', 'supervisor', 'teamlead', 'asm', 'sm', 'avp',
+            'admin', 'president', 'gm', 'vp',
+        ],
     }
     return render(request, 'sales_funnel/stage_detail.html', context)
 
@@ -797,6 +814,171 @@ def delete_funnel_entry(request, entry_id):
     return redirect('sales_funnel:dashboard')
 
 
+def _can_manage_funnel_entry(user, entry):
+    """
+    May `user` remove/restore this funnel entry? A salesperson may act on their
+    own entries; managers/execs on any entry within their scope. Mirrors the
+    role scoping used elsewhere in the funnel.
+    """
+    if user.role == 'salesperson':
+        return entry.salesperson_id == user.id
+    scope = funnel_scope_q(user)
+    if scope is None:  # exec / admin — unrestricted
+        return True
+    return SalesFunnel.objects.filter(scope, pk=entry.pk).exists()
+
+
+@login_required
+@user_passes_test(can_access_funnel)
+def remove_funnel_entry(request, entry_id):
+    """
+    Soft-delete ("remove") a real funnel entry from the active pipeline.
+
+    Unlike delete (test entries only), this never destroys the row. It records a
+    REQUIRED reason, who removed it, and when, and sets is_active=False so the
+    entry drops out of the dashboard/pipeline totals. The archived entry — with
+    its reason — stays available for supervisor review and can be restored.
+    Use when a customer changes requirements and a fresh proposal is coming, so
+    the stale entry doesn't inflate the pipeline.
+    """
+    entry = get_object_or_404(SalesFunnel, id=entry_id)
+
+    if not _can_manage_funnel_entry(request.user, entry):
+        messages.error(request, 'You can only remove funnel entries within your scope.')
+        return redirect('sales_funnel:dashboard')
+
+    if entry.is_closed:
+        messages.error(request, 'Closed (won/lost) deals cannot be removed — they are part of your results history.')
+        return redirect('sales_funnel:dashboard')
+
+    if not entry.is_active:
+        messages.info(request, 'That entry has already been removed from the pipeline.')
+        return redirect('sales_funnel:dashboard')
+
+    if request.method == 'POST':
+        reason = (request.POST.get('remove_reason') or '').strip()
+        if not reason:
+            messages.error(
+                request,
+                'Please provide a reason for removing this entry so your supervisor can review it.'
+            )
+            return redirect('sales_funnel:dashboard')
+
+        entry.is_active = False
+        entry.removed_reason = reason
+        entry.removed_at = timezone.now()
+        entry.removed_by = request.user
+        entry.save(update_fields=['is_active', 'removed_reason', 'removed_at', 'removed_by', 'updated_at'])
+
+        # Leave an audit trail on the customer timeline for supervisor review.
+        if entry.customer:
+            try:
+                CustomerHistory.objects.create(
+                    customer=entry.customer,
+                    action='funnel_entry_removed',
+                    description=(
+                        f'Funnel entry for {entry.company_name} '
+                        f'(SRP ₱{entry.retail}, stage {entry.get_stage_display()}) '
+                        f'removed from the pipeline. Reason: {reason}'
+                    ),
+                    changed_by=request.user,
+                    salesperson_at_time=entry.salesperson,
+                    old_value={'is_active': True, 'stage': entry.stage},
+                    new_value={
+                        'is_active': False,
+                        'removed_reason': reason,
+                        'removed_at': entry.removed_at.isoformat(),
+                        'removed_by': request.user.get_full_name() or request.user.username,
+                    },
+                    ip_address=request.META.get('REMOTE_ADDR'),
+                    user_agent=request.META.get('HTTP_USER_AGENT', '')[:500],
+                )
+            except Exception:
+                pass
+
+        messages.success(
+            request,
+            f'Entry for "{entry.company_name}" removed from the pipeline. '
+            'It is kept for review and can be restored.'
+        )
+
+    return redirect('sales_funnel:dashboard')
+
+
+@login_required
+@user_passes_test(can_access_funnel)
+def restore_funnel_entry(request, entry_id):
+    """Restore a previously removed (archived) funnel entry back into the pipeline."""
+    entry = get_object_or_404(SalesFunnel, id=entry_id)
+
+    if not _can_manage_funnel_entry(request.user, entry):
+        messages.error(request, 'You can only restore funnel entries within your scope.')
+        return redirect('sales_funnel:removed_entries')
+
+    if entry.is_active:
+        messages.info(request, 'That entry is already active in the pipeline.')
+        return redirect('sales_funnel:removed_entries')
+
+    if request.method == 'POST':
+        prior_reason = entry.removed_reason
+        entry.is_active = True
+        entry.removed_reason = ''
+        entry.removed_at = None
+        entry.removed_by = None
+        entry.save(update_fields=['is_active', 'removed_reason', 'removed_at', 'removed_by', 'updated_at'])
+
+        if entry.customer:
+            try:
+                CustomerHistory.objects.create(
+                    customer=entry.customer,
+                    action='funnel_entry_restored',
+                    description=(
+                        f'Funnel entry for {entry.company_name} restored to the pipeline '
+                        f'(was removed with reason: {prior_reason or "n/a"}).'
+                    ),
+                    changed_by=request.user,
+                    salesperson_at_time=entry.salesperson,
+                    old_value={'is_active': False},
+                    new_value={'is_active': True},
+                    ip_address=request.META.get('REMOTE_ADDR'),
+                    user_agent=request.META.get('HTTP_USER_AGENT', '')[:500],
+                )
+            except Exception:
+                pass
+
+        messages.success(request, f'Entry for "{entry.company_name}" restored to the pipeline.')
+
+    return redirect('sales_funnel:removed_entries')
+
+
+@login_required
+@user_passes_test(can_access_funnel)
+def removed_funnel_entries(request):
+    """
+    Review page listing funnel entries that were removed (soft-deleted) from the
+    pipeline, with the reason, who removed them, and when. Role-scoped: a
+    salesperson sees their own; supervisors/ASM/SM/AVP see their teams'; execs
+    see all. Supervisors and above can restore an entry.
+    """
+    user = request.user
+    scope = funnel_scope_q(user)
+    qs = SalesFunnel.objects.filter(is_active=False, is_closed=False)
+    if scope is not None:
+        qs = qs.filter(scope)
+    entries = list(
+        qs.select_related('salesperson', 'customer', 'removed_by', 'proposal')
+        .order_by('-removed_at', '-updated_at')
+    )
+
+    can_restore = user.role in ['supervisor', 'teamlead', 'asm', 'sm', 'avp', 'admin', 'president', 'gm', 'vp']
+
+    return render(request, 'sales_funnel/removed_entries.html', {
+        'entries': entries,
+        'entry_count': len(entries),
+        'can_restore': can_restore,
+    })
+
+
 @login_required
 @user_passes_test(can_access_funnel)
 def update_entry_stage(request, entry_id):
@@ -882,11 +1064,26 @@ def close_entry(request, entry_id):
     
     if request.method == 'POST':
         won = request.POST.get('won') == 'true'
+        lost_reason = (request.POST.get('lost_reason') or '').strip()
+
+        # A lost deal must carry a reason — it's how the rest of the team learns
+        # what went wrong. Won deals don't need one.
+        if not won and not lost_reason:
+            messages.error(
+                request,
+                'Please provide a reason when marking a deal as LOST so the team can learn from it.'
+            )
+            return redirect('sales_funnel:dashboard')
+
         old_outcome = entry.deal_outcome
         entry.is_closed = True
         entry.deal_outcome = 'won' if won else 'lost'
         entry.closed_date = timezone.now().date()
-        entry.notes = f"{entry.notes}\n\nClosed on {entry.closed_date} - {'WON' if won else 'LOST'}".strip()
+        entry.lost_reason = lost_reason if not won else ''
+        closing_note = f"Closed on {entry.closed_date} - {'WON' if won else 'LOST'}"
+        if not won and lost_reason:
+            closing_note += f"\nReason lost: {lost_reason}"
+        entry.notes = f"{entry.notes}\n\n{closing_note}".strip()
         entry.save()
         
         # Log purchase to customer history
@@ -894,6 +1091,18 @@ def close_entry(request, entry_id):
             action = 'deal_won' if won else 'deal_lost'
             profit = (entry.retail or Decimal('0')) - (entry.cost or Decimal('0'))
             description = f"Deal {('WON' if won else 'LOST')} for {entry.company_name} (SRP ₱{entry.retail}, Cost ₱{entry.cost}, Profit ₱{profit})."
+            if not won and lost_reason:
+                description += f" Reason lost: {lost_reason}"
+            new_value = {
+                'deal_outcome': entry.deal_outcome,
+                'is_closed': True,
+                'closed_date': str(entry.closed_date),
+                'retail': float(entry.retail or 0),
+                'cost': float(entry.cost or 0),
+                'profit': float(profit),
+            }
+            if not won and lost_reason:
+                new_value['lost_reason'] = lost_reason
             try:
                 CustomerHistory.objects.create(
                     customer=entry.customer,
@@ -905,14 +1114,7 @@ def close_entry(request, entry_id):
                         'deal_outcome': old_outcome,
                         'is_closed': False,
                     },
-                    new_value={
-                        'deal_outcome': entry.deal_outcome,
-                        'is_closed': True,
-                        'closed_date': str(entry.closed_date),
-                        'retail': float(entry.retail or 0),
-                        'cost': float(entry.cost or 0),
-                        'profit': float(profit),
-                    },
+                    new_value=new_value,
                     ip_address=request.META.get('REMOTE_ADDR'),
                     user_agent=request.META.get('HTTP_USER_AGENT', '')[:500]
                 )

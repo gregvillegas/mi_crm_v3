@@ -124,10 +124,10 @@
                         {% if not entry.is_closed %}
                             <div class="ms-auto">
                                 {% if entry.stage == 'closable' %}
-                                    <button type="button" class="btn btn-success btn-sm" onclick="closeEntry({{ entry.id }}, true)">
+                                    <button type="button" class="btn btn-success btn-sm" onclick="closeEntry({{ entry.id }}, true, '{{ entry.company_name|escapejs }}')">
                                         <i class="fas fa-check"></i> Mark Won
                                     </button>
-                                    <button type="button" class="btn btn-outline-danger btn-sm" onclick="closeEntry({{ entry.id }}, false)">
+                                    <button type="button" class="btn btn-outline-danger btn-sm" onclick="closeEntry({{ entry.id }}, false, '{{ entry.company_name|escapejs }}')">
                                         <i class="fas fa-times"></i> Mark Lost
                                     </button>
                                 {% endif %}
@@ -135,6 +135,34 @@
                         {% endif %}
                     </div>
                 </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Mark Lost modal: a reason is REQUIRED so the team can learn from the loss. -->
+<div class="modal fade" id="lostReasonModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="fas fa-heart-crack me-2"></i>Mark Deal as Lost</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-2">
+                    Closing <strong id="lostReasonCompany">this deal</strong> as <span class="badge bg-danger">LOST</span>.
+                    Share why it was lost — this is visible to your supervisor and manager and helps the whole team improve.
+                </p>
+                <label for="lostReasonInput" class="form-label fw-semibold">Reason lost <span class="text-danger">*</span></label>
+                <textarea id="lostReasonInput" class="form-control" rows="4"
+                          placeholder="e.g. Price too high vs competitor X; customer postponed project; lost to incumbent vendor…"></textarea>
+                <div id="lostReasonError" class="text-danger small mt-1 d-none">Please enter a reason before marking this deal as lost.</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="lostReasonConfirm">
+                    <i class="fas fa-times me-1"></i>Mark as Lost
+                </button>
             </div>
         </div>
     </div>
@@ -187,27 +215,62 @@ document.addEventListener('DOMContentLoaded', () => {
     syncCompanyNameFromCustomer();
 });
 
-// Close entry function
-function closeEntry(entryId, won) {
-    const status = won ? 'won' : 'lost';
-    if (confirm(`Mark this deal as ${status}? This will close the entry.`)) {
-        fetch(`/funnel/close/${entryId}/`, {
-            method: 'POST',
-            headers: {
-                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: `won=${won}`
-        })
-        .then(response => {
-            if (response.redirected) {
-                window.location.href = '{% url "sales_funnel:dashboard" %}';
-            }
-        })
-        .catch(error => {
-            alert('An error occurred while closing the entry.');
-        });
+// Posts the close request. A lost deal requires a reason (enforced server-side too).
+function submitClose(entryId, won, lostReason) {
+    let body = `won=${won}`;
+    if (!won && lostReason) {
+        body += `&lost_reason=${encodeURIComponent(lostReason)}`;
     }
+    fetch(`/funnel/close/${entryId}/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: body
+    })
+    .then(response => {
+        if (response.redirected) {
+            window.location.href = '{% url "sales_funnel:dashboard" %}';
+        }
+    })
+    .catch(error => {
+        alert('An error occurred while closing the entry.');
+    });
+}
+
+// Close entry function. Won = quick confirm; Lost = require a reason via modal.
+function closeEntry(entryId, won, companyName) {
+    if (won) {
+        if (confirm('Mark this deal as WON? This will close the entry.')) {
+            submitClose(entryId, true, null);
+        }
+        return;
+    }
+    const modalEl = document.getElementById('lostReasonModal');
+    const input = document.getElementById('lostReasonInput');
+    const errorEl = document.getElementById('lostReasonError');
+    const companyEl = document.getElementById('lostReasonCompany');
+    const confirmBtn = document.getElementById('lostReasonConfirm');
+
+    input.value = '';
+    errorEl.classList.add('d-none');
+    companyEl.textContent = companyName || 'this deal';
+
+    const modal = new bootstrap.Modal(modalEl);
+    const freshBtn = confirmBtn.cloneNode(true);
+    confirmBtn.parentNode.replaceChild(freshBtn, confirmBtn);
+    freshBtn.addEventListener('click', () => {
+        const reason = input.value.trim();
+        if (!reason) {
+            errorEl.classList.remove('d-none');
+            input.focus();
+            return;
+        }
+        modal.hide();
+        submitClose(entryId, false, reason);
+    });
+    modal.show();
 }
 </script>
 {% endblock %}

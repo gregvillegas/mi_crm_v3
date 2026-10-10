@@ -410,6 +410,10 @@
                                             <button class="btn btn-outline-danger btn-sm" onclick="deleteEntry('{{ entry.id }}')" title="Delete test entry">
                                                 <i class="fas fa-trash"></i>
                                             </button>
+                                        {% else %}
+                                            <button class="btn btn-outline-warning btn-sm" onclick="removeEntry('{{ entry.id }}', '{{ entry.company_name|escapejs }}')" title="Remove from pipeline (needs reason)">
+                                                <i class="fas fa-box-archive"></i>
+                                            </button>
                                         {% endif %}
                                     </div>
                                     {% endif %}
@@ -552,10 +556,10 @@
                                 <div class="col-lg-2 col-md-2 text-end">
                                     {% if show_actions %}
                                     <div class="btn-group btn-group-sm" role="group">
-                                        <button class="btn btn-success btn-sm" onclick="closeEntry('{{ entry.id }}', true)" title="Mark as Won">
+                                        <button class="btn btn-success btn-sm" onclick="closeEntry('{{ entry.id }}', true, '{{ entry.company_name|escapejs }}')" title="Mark as Won">
                                             <i class="fas fa-check"></i>
                                         </button>
-                                        <button class="btn btn-danger btn-sm" onclick="closeEntry('{{ entry.id }}', false)" title="Mark as Lost">
+                                        <button class="btn btn-danger btn-sm" onclick="closeEntry('{{ entry.id }}', false, '{{ entry.company_name|escapejs }}')" title="Mark as Lost">
                                             <i class="fas fa-times"></i>
                                         </button>
                                         <a href="{% url 'sales_funnel:edit_entry' entry.id %}" class="btn btn-outline-primary btn-sm" title="Edit">
@@ -711,6 +715,10 @@
                                         {% if entry.is_test %}
                                             <button class="btn btn-outline-danger btn-sm" onclick="deleteEntry('{{ entry.id }}')" title="Delete test entry">
                                                 <i class="fas fa-trash"></i>
+                                            </button>
+                                        {% else %}
+                                            <button class="btn btn-outline-warning btn-sm" onclick="removeEntry('{{ entry.id }}', '{{ entry.company_name|escapejs }}')" title="Remove from pipeline (needs reason)">
+                                                <i class="fas fa-box-archive"></i>
                                             </button>
                                         {% endif %}
                                     </div>
@@ -873,6 +881,10 @@
                                             <button class="btn btn-outline-danger btn-sm" onclick="deleteEntry('{{ entry.id }}')" title="Delete test entry">
                                                 <i class="fas fa-trash"></i>
                                             </button>
+                                        {% else %}
+                                            <button class="btn btn-outline-warning btn-sm" onclick="removeEntry('{{ entry.id }}', '{{ entry.company_name|escapejs }}')" title="Remove from pipeline (needs reason)">
+                                                <i class="fas fa-box-archive"></i>
+                                            </button>
                                         {% endif %}
                                     </div>
                                     {% endif %}
@@ -889,6 +901,67 @@
                 </div>
             {% endif %}
             {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- CSRF token for the fetch() POSTs on this page -->
+{% csrf_token %}
+
+<!-- Remove-from-pipeline modal: a reason is REQUIRED and kept for supervisor review. -->
+<div class="modal fade" id="removeReasonModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-warning">
+                <h5 class="modal-title"><i class="fas fa-box-archive me-2"></i>Remove from Pipeline</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-2">
+                    Removing <strong id="removeReasonCompany">this entry</strong> from the active pipeline.
+                    It won't count toward pipeline totals, but it is <strong>kept for supervisor review</strong>
+                    and can be restored. Please say why you're removing it (e.g. customer changed requirements,
+                    a new proposal will replace this).
+                </p>
+                <label for="removeReasonInput" class="form-label fw-semibold">Reason <span class="text-danger">*</span></label>
+                <textarea id="removeReasonInput" class="form-control" rows="4"
+                          placeholder="e.g. Customer revised requirements; creating a fresh proposal; this quote is superseded…"></textarea>
+                <div id="removeReasonError" class="text-danger small mt-1 d-none">Please enter a reason before removing this entry.</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-warning" id="removeReasonConfirm">
+                    <i class="fas fa-box-archive me-1"></i>Remove
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Mark Lost modal: a reason is REQUIRED so the team can learn from the loss. -->
+<div class="modal fade" id="lostReasonModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="fas fa-heart-crack me-2"></i>Mark Deal as Lost</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-2">
+                    Closing <strong id="lostReasonCompany">this deal</strong> as <span class="badge bg-danger">LOST</span>.
+                    Share why it was lost — this is visible to your supervisor and manager and helps the whole team improve.
+                </p>
+                <label for="lostReasonInput" class="form-label fw-semibold">Reason lost <span class="text-danger">*</span></label>
+                <textarea id="lostReasonInput" class="form-control" rows="4"
+                          placeholder="e.g. Price too high vs competitor X; customer postponed project; lost to incumbent vendor…"></textarea>
+                <div id="lostReasonError" class="text-danger small mt-1 d-none">Please enter a reason before marking this deal as lost.</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="lostReasonConfirm">
+                    <i class="fas fa-times me-1"></i>Mark as Lost
+                </button>
+            </div>
         </div>
     </div>
 </div>
@@ -920,26 +993,102 @@ function moveEntry(entryId, newStage) {
     }
 }
 
-function closeEntry(entryId, won) {
-    const status = won ? 'won' : 'lost';
-    if (confirm(`Mark this deal as ${status}?`)) {
-        fetch(`/funnel/close/${entryId}/`, {
+// Posts the close request. For a lost deal, lostReason is required by the server.
+function submitClose(entryId, won, lostReason) {
+    let body = `won=${won}`;
+    if (!won && lostReason) {
+        body += `&lost_reason=${encodeURIComponent(lostReason)}`;
+    }
+    fetch(`/funnel/close/${entryId}/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: body
+    })
+    .then(response => {
+        if (response.redirected) {
+            location.reload();
+        }
+    })
+    .catch(error => {
+        showAlert('danger', 'An error occurred while closing the entry.');
+    });
+}
+
+function closeEntry(entryId, won, companyName) {
+    if (won) {
+        if (confirm('Mark this deal as WON?')) {
+            submitClose(entryId, true, null);
+        }
+        return;
+    }
+    // Lost: require a reason via the modal.
+    const modalEl = document.getElementById('lostReasonModal');
+    const input = document.getElementById('lostReasonInput');
+    const errorEl = document.getElementById('lostReasonError');
+    const companyEl = document.getElementById('lostReasonCompany');
+    const confirmBtn = document.getElementById('lostReasonConfirm');
+
+    input.value = '';
+    errorEl.classList.add('d-none');
+    companyEl.textContent = companyName || 'this deal';
+
+    const modal = new bootstrap.Modal(modalEl);
+
+    // Rebind confirm to this entry (clone to drop any previous handler).
+    const freshBtn = confirmBtn.cloneNode(true);
+    confirmBtn.parentNode.replaceChild(freshBtn, confirmBtn);
+    freshBtn.addEventListener('click', () => {
+        const reason = input.value.trim();
+        if (!reason) {
+            errorEl.classList.remove('d-none');
+            input.focus();
+            return;
+        }
+        modal.hide();
+        submitClose(entryId, false, reason);
+    });
+
+    modal.show();
+}
+
+// Remove (soft-delete / archive) a real entry — reason required, kept for review.
+function removeEntry(entryId, companyName) {
+    const modalEl = document.getElementById('removeReasonModal');
+    const input = document.getElementById('removeReasonInput');
+    const errorEl = document.getElementById('removeReasonError');
+    const companyEl = document.getElementById('removeReasonCompany');
+    const confirmBtn = document.getElementById('removeReasonConfirm');
+
+    input.value = '';
+    errorEl.classList.add('d-none');
+    companyEl.textContent = companyName || 'this entry';
+
+    const modal = new bootstrap.Modal(modalEl);
+    const freshBtn = confirmBtn.cloneNode(true);
+    confirmBtn.parentNode.replaceChild(freshBtn, confirmBtn);
+    freshBtn.addEventListener('click', () => {
+        const reason = input.value.trim();
+        if (!reason) {
+            errorEl.classList.remove('d-none');
+            input.focus();
+            return;
+        }
+        modal.hide();
+        fetch(`/funnel/remove/${entryId}/`, {
             method: 'POST',
             headers: {
                 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
                 'Content-Type': 'application/x-www-form-urlencoded',
             },
-            body: `won=${won}`
+            body: `remove_reason=${encodeURIComponent(reason)}`
         })
-        .then(response => {
-            if (response.redirected) {
-                location.reload();
-            }
-        })
-        .catch(error => {
-            showAlert('danger', 'An error occurred while closing the entry.');
-        });
-    }
+        .then(response => { if (response.redirected) location.reload(); })
+        .catch(error => { showAlert('danger', 'An error occurred while removing the entry.'); });
+    });
+    modal.show();
 }
 
 function deleteEntry(entryId) {
