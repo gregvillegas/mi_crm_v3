@@ -139,8 +139,8 @@ def can_import_entries(user):
 FUNNEL_STAGE_META = {
     'quoted':   {'label': 'PINK',   'name': 'Newly Quoted',   'hex': '#e91e63', 'badge': 'danger'},
     'closable': {'label': 'YELLOW', 'name': 'Closable Deals', 'hex': '#ffc107', 'badge': 'warning'},
-    'project':  {'label': 'GREEN',  'name': 'Green Funnel',   'hex': '#28a745', 'badge': 'success'},
-    'services': {'label': 'BLUE',   'name': 'Blue Funnel',    'hex': '#007bff', 'badge': 'primary'},
+    'project':  {'label': 'GREEN',  'name': 'Projects',   'hex': '#28a745', 'badge': 'success'},
+    'services': {'label': 'BLUE',   'name': 'Services',    'hex': '#007bff', 'badge': 'primary'},
 }
 
 
@@ -217,7 +217,10 @@ def funnel_stage_detail(request, stage):
     context = {
         'stage': stage,
         'stage_meta': meta,
-        'stage_display': dict(SalesFunnel.FUNNEL_STAGES).get(stage, meta['name']),
+        # Prefer the label from FUNNEL_STAGE_META (editable per-page naming,
+        # e.g. "Projects"/"Services") and fall back to the model's own label.
+        # Only affects this page's title/header; nothing else reads stage_display.
+        'stage_display': meta.get('name') or dict(SalesFunnel.FUNNEL_STAGES).get(stage, ''),
         'entries': entries,
         'entry_count': len(entries),
         'total_retail': _sum_entry_retail(entries),
@@ -466,7 +469,7 @@ def funnel_dashboard(request):
 
 
 @login_required
-@user_passes_test(is_manager)
+@user_passes_test(can_access_funnel)
 def export_funnel_report(request):
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -474,9 +477,9 @@ def export_funnel_report(request):
 
     user = request.user
     if user.role == 'salesperson':
-        return redirect('sales_funnel:dashboard')
-
-    if user.role == 'supervisor':
+        # Salespeople export their own active pipeline.
+        qs = SalesFunnel.objects.filter(salesperson=user, is_active=True, is_closed=False)
+    elif user.role == 'supervisor':
         groups = Group.objects.filter(supervisor=user)
         salespeople_ids = list(TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True))
         qs = SalesFunnel.objects.filter(Q(salesperson_id__in=salespeople_ids) | Q(salesperson=user), is_active=True, is_closed=False)
@@ -1127,58 +1130,172 @@ def close_entry(request, entry_id):
     return redirect('sales_funnel:dashboard')
 
 
+def _closed_deals_for_user(user):
+    """
+    Role-scoped queryset of CLOSED (won/lost) funnel entries the user may see.
+    Shared by the Deals History page and its Excel export so both apply the
+    exact same visibility rules.
+    """
+    if user.role == 'salesperson':
+        return SalesFunnel.objects.filter(salesperson=user, is_closed=True)
+    if user.role == 'supervisor':
+        groups = Group.objects.filter(supervisor=user)
+        salespeople_ids = TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True)
+        return SalesFunnel.objects.filter(Q(salesperson_id__in=salespeople_ids) | Q(salesperson=user), is_closed=True)
+    if user.role == 'teamlead':
+        teamlead_groups = Group.objects.filter(teamlead=user)
+        salespeople_ids = TeamMembership.objects.filter(group__in=teamlead_groups).values_list('user_id', flat=True)
+        return SalesFunnel.objects.filter(salesperson_id__in=salespeople_ids, is_closed=True)
+    if user.role == 'asm':
+        groups = asm_scoped_groups(user)
+        salespeople_ids = TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True)
+        return SalesFunnel.objects.filter(Q(salesperson_id__in=salespeople_ids) | Q(salesperson=user), is_closed=True)
+    if user.role == 'sm':
+        groups = user.sm_groups.all()
+        salespeople_ids = TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True)
+        return SalesFunnel.objects.filter(Q(salesperson_id__in=salespeople_ids) | Q(salesperson=user), is_closed=True)
+    if user.role == 'avp':
+        teams = Team.objects.filter(avp=user)
+        groups = Group.objects.filter(team__in=teams)
+        salespeople_ids = TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True)
+        return SalesFunnel.objects.filter(Q(salesperson_id__in=salespeople_ids) | Q(salesperson=user), is_closed=True)
+    # Executives and admins can see all closed deals
+    return SalesFunnel.objects.filter(is_closed=True)
+
+
+def _salesperson_initials(sp):
+    """3-letter-ish initials for a salesperson, matching the UI badge logic."""
+    if not sp:
+        return ''
+    initials = (getattr(sp, 'initials', None) or '').upper()
+    if initials:
+        return initials
+    parts = [sp.first_name, sp.last_name]
+    guess = ''.join((p[:1] or '').upper() for p in parts if p)
+    return guess or (sp.username[:3].upper() if sp.username else '')
+
+
+@login_required
+@user_passes_test(can_access_funnel)
+def export_deals_history(request):
+    """
+    Excel export of closed WON and LOST deals shown on the Deals History page.
+
+    Honors the same role scoping, date range (date_from/date_to on closed_date),
+    and outcome filter as the page. Columns: Company, Requirements, Value,
+    Date Closed, Salesperson (initials). Won and Lost go on separate sheets.
+    """
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+    from io import BytesIO
+
+    user = request.user
+    closed_deals = _closed_deals_for_user(user).select_related('salesperson')
+
+    outcome = request.GET.get('outcome', '').strip().lower()
+    date_from = request.GET.get('date_from')
+    date_to = request.GET.get('date_to')
+    if date_from:
+        closed_deals = closed_deals.filter(closed_date__gte=date_from)
+    if date_to:
+        closed_deals = closed_deals.filter(closed_date__lte=date_to)
+
+    won_qs = closed_deals.filter(deal_outcome='won').order_by('-closed_date')
+    lost_qs = closed_deals.filter(deal_outcome='lost').order_by('-closed_date')
+    if outcome == 'won':
+        lost_qs = lost_qs.none()
+    elif outcome == 'lost':
+        won_qs = won_qs.none()
+
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+
+    headers = ['Company', 'Requirements', 'Value', 'Date Closed', 'Salesperson']
+    header_font = Font(bold=True, color='FFFFFF', size=10)
+    header_border = Border(
+        bottom=Side(style='thin'), top=Side(style='thin'),
+        left=Side(style='thin'), right=Side(style='thin'),
+    )
+    data_border = Border(
+        bottom=Side(style='thin', color='DDDDDD'),
+        left=Side(style='thin', color='DDDDDD'),
+        right=Side(style='thin', color='DDDDDD'),
+    )
+
+    def build_sheet(title, qs, color):
+        ws = wb.create_sheet(title=title)
+        header_fill = PatternFill(start_color=color, end_color=color, fill_type='solid')
+        for col_idx, h in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col_idx, value=h)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+            cell.border = header_border
+
+        total_value = Decimal('0')
+        row_idx = 2
+        for e in qs:
+            value = e.display_retail or Decimal('0')
+            total_value += value
+            row = [
+                e.company_name,
+                e.requirement_description or '',
+                float(value),
+                e.closed_date.strftime('%Y-%m-%d') if e.closed_date else '',
+                _salesperson_initials(e.salesperson),
+            ]
+            for col_idx, val in enumerate(row, 1):
+                cell = ws.cell(row=row_idx, column=col_idx, value=val)
+                cell.border = data_border
+                if col_idx == 3:
+                    cell.number_format = '#,##0.00'
+            row_idx += 1
+
+        # Totals row
+        if qs:
+            ws.cell(row=row_idx, column=2, value='TOTAL').font = Font(bold=True)
+            tot = ws.cell(row=row_idx, column=3, value=float(total_value))
+            tot.font = Font(bold=True)
+            tot.number_format = '#,##0.00'
+
+        # Column widths
+        widths = {1: 38, 2: 50, 3: 16, 4: 14, 5: 14}
+        for col_idx, w in widths.items():
+            ws.column_dimensions[get_column_letter(col_idx)].width = w
+        return ws
+
+    if outcome != 'lost':
+        build_sheet('Won Deals', won_qs, '28A745')
+    if outcome != 'won':
+        build_sheet('Lost Deals', lost_qs, 'DC3545')
+    if not wb.sheetnames:
+        ws = wb.create_sheet(title='No Data')
+        ws.cell(row=1, column=1, value='No closed deals found for the selected filters.')
+
+    buffer = BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+
+    label = outcome if outcome in ('won', 'lost') else 'all'
+    filename = f"deals_history_{label}.xlsx"
+    response = HttpResponse(
+        buffer.getvalue(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
+
 @login_required
 @user_passes_test(can_access_funnel)
 def deals_history(request):
     """View to show comprehensive won/lost deal statistics"""
     user = request.user
     outcome = request.GET.get('outcome', '').strip().lower()
-    
-    # Get closed deals based on user role - similar logic to funnel_dashboard
-    if user.role == 'salesperson':
-        closed_deals = SalesFunnel.objects.filter(
-            salesperson=user,
-            is_closed=True
-        )
-    elif user.role == 'supervisor':
-        groups = Group.objects.filter(supervisor=user)
-        salespeople_ids = TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True)
-        closed_deals = SalesFunnel.objects.filter(
-            Q(salesperson_id__in=salespeople_ids) | Q(salesperson=user),
-            is_closed=True
-        )
-    elif user.role == 'teamlead':
-        teamlead_groups = Group.objects.filter(teamlead=user)
-        salespeople_ids = TeamMembership.objects.filter(group__in=teamlead_groups).values_list('user_id', flat=True)
-        closed_deals = SalesFunnel.objects.filter(
-            salesperson_id__in=salespeople_ids,
-            is_closed=True
-        )
-    elif user.role == 'asm':
-        groups = asm_scoped_groups(user)
-        salespeople_ids = TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True)
-        closed_deals = SalesFunnel.objects.filter(
-            Q(salesperson_id__in=salespeople_ids) | Q(salesperson=user),
-            is_closed=True
-        )
-    elif user.role == 'sm':
-        groups = user.sm_groups.all()
-        salespeople_ids = TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True)
-        closed_deals = SalesFunnel.objects.filter(
-            Q(salesperson_id__in=salespeople_ids) | Q(salesperson=user),
-            is_closed=True
-        )
-    elif user.role == 'avp':
-        teams = Team.objects.filter(avp=user)
-        groups = Group.objects.filter(team__in=teams)
-        salespeople_ids = TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True)
-        closed_deals = SalesFunnel.objects.filter(
-            Q(salesperson_id__in=salespeople_ids) | Q(salesperson=user),
-            is_closed=True
-        )
-    else:
-        # Executives and admins can see all closed deals
-        closed_deals = SalesFunnel.objects.filter(is_closed=True)
+
+    # Role-scoped closed deals (shared with the Excel export).
+    closed_deals = _closed_deals_for_user(user)
     
     # Apply date filters if provided
     date_from = request.GET.get('date_from')

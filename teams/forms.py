@@ -239,6 +239,13 @@ class CompanyAnnualTargetForm(forms.ModelForm):
     class Meta:
         model = CompanyAnnualTarget
         fields = ['year', 'amount', 'notes']
+        labels = {
+            'year': 'Fiscal Year',
+            'amount': 'Annual Profit Target (₱)',
+        }
+        help_texts = {
+            'year': 'Fiscal year named by the year it ends in — e.g. 2026 = Dec 1 2025 to Nov 30 2026.',
+        }
         widgets = {
             'year': forms.NumberInput(attrs={'class': 'form-control', 'min': 2000, 'step': 1}),
             'amount': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'}),

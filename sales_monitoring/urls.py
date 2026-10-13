@@ -16,6 +16,9 @@ urlpatterns = [
     path('group/<int:group_id>/fiscal-summary/export/excel/', views.export_group_fiscal_summary_excel, name='export_group_fiscal_summary_excel'),
     path('group/<int:group_id>/fiscal-summary/export/pdf/', views.export_group_fiscal_summary_pdf, name='export_group_fiscal_summary_pdf'),
     path('team-performance/export/excel/', views.export_team_fiscal_summary_excel, name='export_team_fiscal_summary_excel'),
+    path('fiscal-year-comparison/', views.fiscal_year_comparison, name='fiscal_year_comparison'),
+    path('fiscal-year-comparison/export/excel/', views.export_fiscal_year_comparison_excel, name='export_fiscal_year_comparison_excel'),
+    path('fiscal-year-comparison/export/pdf/', views.export_fiscal_year_comparison_pdf, name='export_fiscal_year_comparison_pdf'),
     
     # Activity management
     path('activity/create/', views.create_activity, name='create_activity'),

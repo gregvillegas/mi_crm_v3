@@ -2149,12 +2149,18 @@ def get_executive_dashboard_data():
         team_kpis, group_performance, funnel_overview, individual_performance
     )
     
-    # Company annual target set by GM/VP
+    # Company annual target set by GM/VP. CompanyAnnualTarget.year is the FISCAL
+    # year (Dec 1 -> Nov 30, named by the year it ends in), and actual profit is
+    # measured over that same fiscal window — so the target and the actuals
+    # align with the Dec-Nov fiscal definition used everywhere else.
     from teams.models import CompanyAnnualTarget
-    company_target_obj = CompanyAnnualTarget.objects.filter(year=today.year).first()
+    from sales_monitoring.fiscal import fiscal_year_for_date, fiscal_window
+    company_fiscal_year = fiscal_year_for_date(today)
+    fy_start, fy_end = fiscal_window(company_fiscal_year)
+    company_target_obj = CompanyAnnualTarget.objects.filter(year=company_fiscal_year).first()
     company_quota = company_target_obj.amount if company_target_obj else Decimal('0')
     company_actual_profit = won_deals.filter(
-        closed_date__gte=year_start,
+        closed_date__gte=fy_start,
         closed_date__lte=today
     ).aggregate(total=Sum(F('retail') - F('cost')))['total'] or Decimal('0')
     company_progress_pct = float((company_actual_profit / company_quota * 100) if company_quota and company_quota > 0 else 0)
@@ -2206,6 +2212,8 @@ def get_executive_dashboard_data():
             'progress_pct': company_progress_pct,
             'deficit': company_deficit,
             'status_color': company_status_color,
+            'fiscal_year': company_fiscal_year,
+            'fiscal_label': f"FY{company_fiscal_year} (Dec {fy_start.year} - Nov {fy_end.year})",
         },
     }
 
@@ -2403,3 +2411,373 @@ def export_activities(request):
         ])
     
     return response
+
+
+def _fy_scope_salesperson_ids(scope_type, scope_id):
+    """Salesperson IDs for a comparison scope. None = company-wide (all)."""
+    from teams.models import Team, Group, TeamMembership
+    from sales_monitoring.models import FiscalYearSummary
+
+    if scope_type == FiscalYearSummary.SCOPE_COMPANY:
+        return None
+    if scope_type == FiscalYearSummary.SCOPE_SALESPERSON:
+        return [scope_id]
+    if scope_type == FiscalYearSummary.SCOPE_GROUP:
+        return list(TeamMembership.objects.filter(group_id=scope_id).values_list('user_id', flat=True))
+    if scope_type == FiscalYearSummary.SCOPE_TEAM:
+        return list(TeamMembership.objects.filter(group__team_id=scope_id).values_list('user_id', flat=True))
+    return []
+
+
+def _fy_resolve_scope(request):
+    """
+    Resolve the (scope_type, scope_id, scope_name) a user is asking for, enforcing
+    role visibility. Execs/admin may pick any scope via ?scope_type=&scope_id=;
+    everyone else is pinned to their own salesperson scope.
+    """
+    from teams.models import Team, Group
+    from sales_monitoring.models import FiscalYearSummary
+
+    user = request.user
+    is_exec = user.role in ['admin', 'vp', 'gm', 'president', 'avp']
+
+    if not is_exec:
+        return (FiscalYearSummary.SCOPE_SALESPERSON, user.id,
+                user.get_full_name() or user.username)
+
+    scope_type = request.GET.get('scope_type', FiscalYearSummary.SCOPE_COMPANY)
+    try:
+        scope_id = int(request.GET.get('scope_id', 0))
+    except (TypeError, ValueError):
+        scope_id = 0
+
+    # AVPs can only drill into their own teams/groups/salespeople.
+    if user.role == 'avp':
+        avp_team_ids = set(Team.objects.filter(avp=user).values_list('id', flat=True))
+        avp_group_ids = set(Group.objects.filter(team__avp=user).values_list('id', flat=True))
+        if scope_type == FiscalYearSummary.SCOPE_TEAM and scope_id not in avp_team_ids:
+            scope_type, scope_id = FiscalYearSummary.SCOPE_COMPANY, 0
+        elif scope_type == FiscalYearSummary.SCOPE_GROUP and scope_id not in avp_group_ids:
+            scope_type, scope_id = FiscalYearSummary.SCOPE_COMPANY, 0
+
+    if scope_type == FiscalYearSummary.SCOPE_TEAM:
+        t = Team.objects.filter(id=scope_id).first()
+        return (scope_type, scope_id, t.name if t else 'Team')
+    if scope_type == FiscalYearSummary.SCOPE_GROUP:
+        g = Group.objects.filter(id=scope_id).first()
+        return (scope_type, scope_id, g.name if g else 'Group')
+    if scope_type == FiscalYearSummary.SCOPE_SALESPERSON:
+        from users.models import User as _User
+        sp = _User.objects.filter(id=scope_id).first()
+        return (scope_type, scope_id, (sp.get_full_name() or sp.username) if sp else 'Salesperson')
+    return (FiscalYearSummary.SCOPE_COMPANY, 0, 'Company')
+
+
+def _build_fy_comparison(request):
+    """
+    Shared builder for the FY comparison (HTML view + Excel/PDF exports).
+
+    Returns a context dict. Honors ?fy=, ?scope_type=&scope_id=, and ?mode=
+    (``full`` = full prior year, ``ytd`` = same Dec-through-current-month window
+    in both years for a fair mid-year read).
+    """
+    from decimal import Decimal
+    from sales_monitoring.fiscal import (
+        compute_scope_performance, fiscal_year_for_date, fiscal_year_label,
+        fiscal_months, fiscal_month_index_for_date,
+    )
+    from sales_monitoring.models import FiscalYearSummary
+
+    today = timezone.now().date()
+    current_fy = fiscal_year_for_date(today)
+
+    try:
+        fy = int(request.GET.get('fy', current_fy))
+    except (TypeError, ValueError):
+        fy = current_fy
+    prev_fy = fy - 1
+
+    mode = request.GET.get('mode', 'full')
+    if mode not in ('full', 'ytd'):
+        mode = 'full'
+    # YTD cap: only meaningful when the featured year is the live current year.
+    months_through = None
+    if mode == 'ytd' and fy == current_fy:
+        months_through = fiscal_month_index_for_date(today)
+
+    scope_type, scope_id, scope_name = _fy_resolve_scope(request)
+    sp_ids = _fy_scope_salesperson_ids(scope_type, scope_id)
+
+    snapshotted_years = set(
+        FiscalYearSummary.objects.values_list('fiscal_year', flat=True).distinct()
+    )
+
+    def perf_for(fiscal_year, cap):
+        """Frozen snapshot when available AND no YTD cap; otherwise live."""
+        # A YTD cap must be computed live (snapshots store full-year numbers).
+        if cap is None and fiscal_year in snapshotted_years:
+            row = FiscalYearSummary.objects.filter(
+                fiscal_year=fiscal_year, scope_type=scope_type, scope_id=scope_id
+            ).first()
+            if row:
+                monthly = [Decimal(str(v)) for v in (row.monthly_profit or [])]
+                return {
+                    'source': 'frozen',
+                    'won_count': row.won_count, 'lost_count': row.lost_count,
+                    'win_rate': float(row.win_rate),
+                    'total_revenue': row.total_revenue, 'total_profit': row.total_profit,
+                    'avg_deal_size': row.avg_deal_size,
+                    'quota': row.quota, 'attainment_pct': row.attainment_pct,
+                    'monthly_profit': monthly,
+                }
+        p = compute_scope_performance(fiscal_year, salesperson_ids=sp_ids, months_through=cap)
+        return {
+            'source': 'live',
+            'won_count': p.won_count, 'lost_count': p.lost_count,
+            'win_rate': p.win_rate,
+            'total_revenue': p.total_revenue, 'total_profit': p.total_profit,
+            'avg_deal_size': p.avg_deal_size,
+            'quota': None, 'attainment_pct': None,
+            'monthly_profit': p.monthly_profit,
+        }
+
+    cur = perf_for(fy, months_through)
+    prev = perf_for(prev_fy, months_through)  # same cap on the prior year => fair window
+
+    def delta(curr_val, prev_val):
+        curr_val = float(curr_val or 0)
+        prev_val = float(prev_val or 0)
+        diff = curr_val - prev_val
+        pct = (diff / prev_val * 100) if prev_val else None
+        return {'diff': diff, 'pct': pct}
+
+    metrics = [
+        {'label': 'Total Profit', 'money': True, 'is_pct': False,
+         'cur': cur['total_profit'], 'prev': prev['total_profit'],
+         'delta': delta(cur['total_profit'], prev['total_profit'])},
+        {'label': 'Total Revenue', 'money': True, 'is_pct': False,
+         'cur': cur['total_revenue'], 'prev': prev['total_revenue'],
+         'delta': delta(cur['total_revenue'], prev['total_revenue'])},
+        {'label': 'Won Deals', 'money': False, 'is_pct': False,
+         'cur': cur['won_count'], 'prev': prev['won_count'],
+         'delta': delta(cur['won_count'], prev['won_count'])},
+        {'label': 'Win Rate (%)', 'money': False, 'is_pct': True,
+         'cur': cur['win_rate'], 'prev': prev['win_rate'],
+         'delta': delta(cur['win_rate'], prev['win_rate'])},
+        {'label': 'Avg Deal Size', 'money': True, 'is_pct': False,
+         'cur': cur['avg_deal_size'], 'prev': prev['avg_deal_size'],
+         'delta': delta(cur['avg_deal_size'], prev['avg_deal_size'])},
+    ]
+
+    # Month-by-month overlay (Dec..Nov) pairing the two years' profit.
+    month_labels = [m['label'] for m in fiscal_months(fy)]
+    monthly_rows = []
+    cur_m = cur.get('monthly_profit') or []
+    prev_m = prev.get('monthly_profit') or []
+    for i, lbl in enumerate(month_labels):
+        c_val = cur_m[i] if i < len(cur_m) else Decimal('0')
+        p_val = prev_m[i] if i < len(prev_m) else Decimal('0')
+        monthly_rows.append({'label': lbl, 'cur': c_val, 'prev': p_val,
+                             'delta': delta(c_val, p_val)})
+
+    return {
+        'fy': fy, 'prev_fy': prev_fy,
+        'fy_label': fiscal_year_label(fy), 'prev_fy_label': fiscal_year_label(prev_fy),
+        'cur': cur, 'prev': prev, 'metrics': metrics,
+        'monthly_rows': monthly_rows,
+        'scope_type': scope_type, 'scope_id': scope_id, 'scope_name': scope_name,
+        'mode': mode, 'months_through': months_through,
+        'current_fy': current_fy,
+        'available_years': sorted(set(snapshotted_years) | {current_fy, prev_fy}, reverse=True),
+        'snapshotted_years': sorted(snapshotted_years, reverse=True),
+    }
+
+
+# Roles allowed to view / export the Fiscal Year Comparison. Restricted to
+# executives and AVPs — this is a company/team performance tool, not for
+# individual salespeople or supervisors.
+FY_COMPARISON_ROLES = ['admin', 'gm', 'vp', 'avp']
+
+
+@login_required
+def fiscal_year_comparison(request):
+    """
+    Year-over-year comparison: a chosen fiscal year beside the one before it,
+    per scope (company / team / group / salesperson), with a full-year or
+    same-period-YTD mode and a month-by-month overlay.
+
+    A fiscal year that has been snapshotted is read FROZEN; otherwise it is
+    computed LIVE (YTD mode is always live, since snapshots store full years).
+    Restricted to admin/gm/vp/avp. See docs/FISCAL_YEAR_WORKFLOW.md.
+    """
+    user = request.user
+    if user.role not in FY_COMPARISON_ROLES:
+        return HttpResponseForbidden("You don't have permission to access this page.")
+
+    ctx = _build_fy_comparison(request)
+
+    # Scope options for the exec drill-down picker.
+    from teams.models import Team, Group
+    is_exec = user.role in ['admin', 'vp', 'gm', 'president', 'avp']
+    if user.role == 'avp':
+        teams = Team.objects.filter(avp=user).order_by('name')
+        groups = Group.objects.filter(team__avp=user).select_related('team').order_by('team__name', 'name')
+    elif is_exec:
+        teams = Team.objects.all().order_by('name')
+        groups = Group.objects.select_related('team').order_by('team__name', 'name')
+    else:
+        teams = Team.objects.none()
+        groups = Group.objects.none()
+
+    ctx.update({
+        'is_exec': is_exec,
+        'scope_teams': teams,
+        'scope_groups': groups,
+    })
+    return render(request, 'sales_monitoring/fiscal_year_comparison.html', ctx)
+
+
+@login_required
+def export_fiscal_year_comparison_excel(request):
+    """Excel export of the FY comparison (metrics + month-by-month overlay)."""
+    from io import BytesIO
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+
+    user = request.user
+    if user.role not in FY_COMPARISON_ROLES:
+        return HttpResponseForbidden("You don't have permission to access this page.")
+
+    ctx = _build_fy_comparison(request)
+    fy, prev_fy = ctx['fy'], ctx['prev_fy']
+    mode_label = 'Same-period YTD' if ctx['mode'] == 'ytd' and ctx['months_through'] else 'Full year'
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = f"FY{fy} vs FY{prev_fy}"
+
+    title_fill = PatternFill(fill_type='solid', fgColor='1D4ED8')
+    title_font = Font(color='FFFFFF', bold=True)
+    header_fill = PatternFill(fill_type='solid', fgColor='E5E7EB')
+    header_font = Font(bold=True)
+
+    ws.append([f"Fiscal Year Comparison — {ctx['scope_name']}"])
+    ws.append([f"FY{fy} vs FY{prev_fy}  ({mode_label})"])
+    ws.append([])
+    for cell in ws[1]:
+        cell.font = title_font; cell.fill = title_fill
+
+    # Metrics table
+    ws.append(['Metric', f'FY{fy}', f'FY{prev_fy}', 'Change', '% Change'])
+    for cell in ws[ws.max_row]:
+        cell.font = header_font; cell.fill = header_fill; cell.alignment = Alignment(horizontal='center')
+    for m in ctx['metrics']:
+        pct = m['delta']['pct']
+        ws.append([
+            m['label'], float(m['cur'] or 0), float(m['prev'] or 0),
+            float(m['delta']['diff']),
+            (f"{pct:.1f}%" if pct is not None else '—'),
+        ])
+    for row in ws.iter_rows(min_row=5, max_row=ws.max_row, min_col=2, max_col=4):
+        for cell in row:
+            if isinstance(cell.value, (int, float)):
+                cell.number_format = '#,##0.00'
+
+    # Month-by-month overlay
+    ws.append([])
+    ws.append(['Month-by-Month Profit (Dec–Nov)'])
+    ws[ws.max_row][0].font = header_font
+    ws.append(['Month', f'FY{fy}', f'FY{prev_fy}', 'Change'])
+    for cell in ws[ws.max_row]:
+        cell.font = header_font; cell.fill = header_fill; cell.alignment = Alignment(horizontal='center')
+    monthly_start = ws.max_row + 1
+    for row in ctx['monthly_rows']:
+        ws.append([row['label'], float(row['cur'] or 0), float(row['prev'] or 0), float(row['delta']['diff'])])
+    for r in ws.iter_rows(min_row=monthly_start, max_row=ws.max_row, min_col=2, max_col=4):
+        for cell in r:
+            if isinstance(cell.value, (int, float)):
+                cell.number_format = '#,##0.00'
+
+    for col, width in {'A': 28, 'B': 18, 'C': 18, 'D': 16, 'E': 12}.items():
+        ws.column_dimensions[col].width = width
+
+    out = BytesIO(); wb.save(out); out.seek(0)
+    filename = f"fy_comparison_{fy}_vs_{prev_fy}_{ctx['scope_name']}.xlsx".replace(' ', '_')
+    resp = HttpResponse(out.getvalue(),
+                        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    resp['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return resp
+
+
+@login_required
+def export_fiscal_year_comparison_pdf(request):
+    """PDF export of the FY comparison (metrics + month-by-month overlay)."""
+    from io import BytesIO
+    from reportlab.lib.pagesizes import A4
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib import colors as rl_colors
+
+    user = request.user
+    if user.role not in FY_COMPARISON_ROLES:
+        return HttpResponseForbidden("You don't have permission to access this page.")
+
+    ctx = _build_fy_comparison(request)
+    fy, prev_fy = ctx['fy'], ctx['prev_fy']
+    mode_label = 'Same-period YTD' if ctx['mode'] == 'ytd' and ctx['months_through'] else 'Full year'
+
+    def money(v):
+        return f"P{float(v or 0):,.0f}"
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=24, bottomMargin=24, leftMargin=28, rightMargin=28)
+    styles = getSampleStyleSheet()
+    elems = [
+        Paragraph(f"Fiscal Year Comparison — {ctx['scope_name']}", styles['Title']),
+        Paragraph(f"FY{fy} vs FY{prev_fy} &nbsp;({mode_label})", styles['Normal']),
+        Spacer(1, 12),
+    ]
+
+    # Metrics table
+    data = [['Metric', f'FY{fy}', f'FY{prev_fy}', 'Change', '% Change']]
+    for m in ctx['metrics']:
+        pct = m['delta']['pct']
+        if m['is_pct']:
+            cur_s, prev_s, diff_s = f"{float(m['cur']):.1f}%", f"{float(m['prev']):.1f}%", f"{m['delta']['diff']:.1f} pts"
+        elif m['money']:
+            cur_s, prev_s, diff_s = money(m['cur']), money(m['prev']), money(m['delta']['diff'])
+        else:
+            cur_s, prev_s, diff_s = f"{int(m['cur'])}", f"{int(m['prev'])}", f"{int(m['delta']['diff'])}"
+        data.append([m['label'], cur_s, prev_s, diff_s, (f"{pct:.1f}%" if pct is not None else '-')])
+    t = Table(data, hAlign='LEFT')
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#1D4ED8')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
+        ('ALIGN', (1, 0), (-1, -1), 'RIGHT'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+    ]))
+    elems += [t, Spacer(1, 16),
+              Paragraph('Month-by-Month Profit (Dec–Nov)', styles['Heading3'])]
+
+    mdata = [['Month', f'FY{fy}', f'FY{prev_fy}', 'Change']]
+    for row in ctx['monthly_rows']:
+        mdata.append([row['label'], money(row['cur']), money(row['prev']), money(row['delta']['diff'])])
+    mt = Table(mdata, hAlign='LEFT')
+    mt.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#374151')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
+        ('ALIGN', (1, 0), (-1, -1), 'RIGHT'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+    ]))
+    elems.append(mt)
+
+    doc.build(elems)
+    buf.seek(0)
+    filename = f"fy_comparison_{fy}_vs_{prev_fy}_{ctx['scope_name']}.pdf".replace(' ', '_')
+    resp = HttpResponse(buf.getvalue(), content_type='application/pdf')
+    resp['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return resp

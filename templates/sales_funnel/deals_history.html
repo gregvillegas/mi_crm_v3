@@ -7,11 +7,25 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2><i class="fas fa-chart-line"></i> Deals History & Statistics</h2>
     <div class="d-flex gap-2">
+        <button type="button" class="btn btn-outline-success" onclick="exportDealsHistory()">
+            <i class="fas fa-file-excel"></i> Export Excel
+        </button>
         <a href="{% url 'sales_funnel:dashboard' %}" class="btn btn-primary">
             <i class="fas fa-arrow-left"></i> Back to Dashboard
         </a>
     </div>
 </div>
+
+<script>
+// Export the currently filtered Won/Lost deals to Excel, preserving the active
+// date range and outcome filter from the page's query string.
+function exportDealsHistory() {
+    const params = new URLSearchParams(window.location.search);
+    const base = "{% url 'sales_funnel:export_deals_history' %}";
+    const qs = params.toString();
+    window.location = qs ? (base + '?' + qs) : base;
+}
+</script>
 
 <!-- Date Filter -->
 <div class="card mb-4">

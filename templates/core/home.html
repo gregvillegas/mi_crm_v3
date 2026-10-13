@@ -76,7 +76,13 @@
 <div class="row mb-4">
     <div class="col">
         <div class="d-flex justify-content-between align-items-center mb-3">
-            <h3><i class="fas fa-chart-line text-primary"></i> Sales Funnel Overview</h3>
+            <h3 class="mb-0">
+                <i class="fas fa-chart-line text-primary"></i> Sales Funnel Overview
+                <span class="badge bg-secondary rounded-pill align-middle ms-2"
+                      title="Total active funnel entries">
+                    {{ funnel_stats.total_entries }} active
+                </span>
+            </h3>
             <div class="btn-group">
                 {% if can_add_funnel %}
                     <a href="{% url 'sales_funnel:add_entry' %}" class="btn btn-primary btn-sm">
@@ -91,62 +97,70 @@
     </div>
 </div>
 
-<!-- Funnel Statistics Cards -->
+<!-- Funnel Statistics Cards — one per pipeline stage (Pink / Yellow / Green / Blue) -->
 <div class="row mb-4">
     <div class="col-lg-3 col-md-6 mb-3">
-        <div class="card bg-info text-white h-100">
-            <div class="card-body d-flex align-items-center">
-                <div class="me-3">
-                    <i class="fas fa-list-alt fa-2x"></i>
-                </div>
-                <div>
-                    <h5 class="card-title mb-1">{{ funnel_stats.total_entries }}</h5>
-                    <small>Total Active Entries</small>
+        <a href="{% url 'sales_funnel:stage_detail' 'quoted' %}" class="text-decoration-none">
+            <div class="card text-white h-100 newly-quoted-card">
+                <div class="card-body d-flex align-items-center">
+                    <div class="me-3">
+                        <i class="fas fa-quote-left fa-2x"></i>
+                    </div>
+                    <div>
+                        <h5 class="card-title mb-1">{{ funnel_stats.quoted_count }}</h5>
+                        <small>Pink Funnel</small>
+                    </div>
                 </div>
             </div>
-        </div>
+        </a>
     </div>
-    
+
     <div class="col-lg-3 col-md-6 mb-3">
-        <div class="card text-white h-100 newly-quoted-card">
-            <div class="card-body d-flex align-items-center">
-                <div class="me-3">
-                    <i class="fas fa-quote-left fa-2x"></i>
-                </div>
-                <div>
-                    <h5 class="card-title mb-1">{{ funnel_stats.quoted_count }}</h5>
-                    <small>Newly Quoted</small>
+        <a href="{% url 'sales_funnel:stage_detail' 'closable' %}" class="text-decoration-none">
+            <div class="card bg-warning text-dark h-100">
+                <div class="card-body d-flex align-items-center">
+                    <div class="me-3">
+                        <i class="fas fa-handshake fa-2x"></i>
+                    </div>
+                    <div>
+                        <h5 class="card-title mb-1">{{ funnel_stats.closable_count }}</h5>
+                        <small>Yellow Funnel</small>
+                    </div>
                 </div>
             </div>
-        </div>
+        </a>
     </div>
-    
+
     <div class="col-lg-3 col-md-6 mb-3">
-        <div class="card bg-warning text-dark h-100">
-            <div class="card-body d-flex align-items-center">
-                <div class="me-3">
-                    <i class="fas fa-handshake fa-2x"></i>
-                </div>
-                <div>
-                    <h5 class="card-title mb-1">{{ funnel_stats.closable_count }}</h5>
-                    <small>Closable This Month</small>
+        <a href="{% url 'sales_funnel:stage_detail' 'project' %}" class="text-decoration-none">
+            <div class="card bg-success text-white h-100">
+                <div class="card-body d-flex align-items-center">
+                    <div class="me-3">
+                        <i class="fas fa-project-diagram fa-2x"></i>
+                    </div>
+                    <div>
+                        <h5 class="card-title mb-1">{{ funnel_stats.project_count }}</h5>
+                        <small>Green Funnel</small>
+                    </div>
                 </div>
             </div>
-        </div>
+        </a>
     </div>
-    
+
     <div class="col-lg-3 col-md-6 mb-3">
-        <div class="card bg-success text-white h-100">
-            <div class="card-body d-flex align-items-center">
-                <div class="me-3">
-                    <i class="fas fa-project-diagram fa-2x"></i>
-                </div>
-                <div>
-                    <h5 class="card-title mb-1">{{ funnel_stats.project_count }}</h5>
-                    <small>Project Based</small>
+        <a href="{% url 'sales_funnel:stage_detail' 'services' %}" class="text-decoration-none">
+            <div class="card bg-primary text-white h-100">
+                <div class="card-body d-flex align-items-center">
+                    <div class="me-3">
+                        <i class="fas fa-screwdriver-wrench fa-2x"></i>
+                    </div>
+                    <div>
+                        <h5 class="card-title mb-1">{{ funnel_stats.services_count }}</h5>
+                        <small>Blue Funnel</small>
+                    </div>
                 </div>
             </div>
-        </div>
+        </a>
     </div>
 </div>
 

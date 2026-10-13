@@ -477,3 +477,97 @@ class ProofOfConcept(models.Model):
     
     def __str__(self):
         return f"POC: {self.title} - {self.customer.company_name}"
+
+
+class FiscalYearSummary(models.Model):
+    """
+    A frozen, read-only snapshot of a fiscal year's performance for one scope
+    (company / team / group / salesperson), captured at year-end.
+
+    Performance across the app is normally computed LIVE from SalesFunnel rows,
+    which can change after a year closes (edits, removals/restores, proposal
+    amount changes). This model preserves the final numbers so a closed fiscal
+    year stays stable and can be compared against the next year.
+    See docs/FISCAL_YEAR_WORKFLOW.md.
+    """
+    SCOPE_COMPANY = 'company'
+    SCOPE_TEAM = 'team'
+    SCOPE_GROUP = 'group'
+    SCOPE_SALESPERSON = 'salesperson'
+    SCOPE_CHOICES = [
+        (SCOPE_COMPANY, 'Company'),
+        (SCOPE_TEAM, 'Team'),
+        (SCOPE_GROUP, 'Group'),
+        (SCOPE_SALESPERSON, 'Salesperson'),
+    ]
+
+    fiscal_year = models.IntegerField(
+        help_text="Fiscal year named by the year it ends in (e.g. 2026 = Dec 2025 - Nov 2026)."
+    )
+    scope_type = models.CharField(max_length=20, choices=SCOPE_CHOICES)
+    # The team/group/salesperson id this row summarizes. 0 for company-wide.
+    scope_id = models.IntegerField(default=0)
+    scope_name = models.CharField(
+        max_length=200,
+        help_text="Human-readable name of the scope at snapshot time (e.g. salesperson or group name)."
+    )
+
+    # Frozen performance metrics.
+    won_count = models.IntegerField(default=0)
+    lost_count = models.IntegerField(default=0)
+    win_rate = models.DecimalField(max_digits=6, decimal_places=2, default=0)
+    total_revenue = models.DecimalField(max_digits=16, decimal_places=2, default=0)
+    total_profit = models.DecimalField(max_digits=16, decimal_places=2, default=0)
+    avg_deal_size = models.DecimalField(max_digits=16, decimal_places=2, default=0)
+    # 12 monthly profit figures, Dec..Nov, as a JSON list of strings/numbers.
+    monthly_profit = models.JSONField(default=list, blank=True)
+
+    # Frozen target/quota context so achievement % doesn't drift if quotas are
+    # later edited. Null when no target applied to the scope.
+    quota = models.DecimalField(max_digits=16, decimal_places=2, null=True, blank=True)
+
+    # Provenance.
+    generated_at = models.DateTimeField(auto_now_add=True)
+    generated_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='fiscal_snapshots_generated'
+    )
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        unique_together = ('fiscal_year', 'scope_type', 'scope_id')
+        ordering = ['-fiscal_year', 'scope_type', 'scope_name']
+        indexes = [
+            models.Index(fields=['fiscal_year', 'scope_type']),
+        ]
+        verbose_name = 'Fiscal Year Summary'
+        verbose_name_plural = 'Fiscal Year Summaries'
+
+    def __str__(self):
+        return f"FY{self.fiscal_year} {self.get_scope_type_display()}: {self.scope_name}"
+
+    @property
+    def attainment_pct(self):
+        """Profit vs frozen quota, as a percentage. None if no quota was set."""
+        if self.quota and self.quota > 0:
+            return float(self.total_profit / self.quota * 100)
+        return None
+
+
+class FiscalYearSnapshotLog(models.Model):
+    """Audit trail for snapshot generation / regeneration of a fiscal year."""
+    fiscal_year = models.IntegerField()
+    action = models.CharField(max_length=20)  # 'created' | 'regenerated'
+    scope_rows = models.IntegerField(default=0, help_text="Number of summary rows written.")
+    performed_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='fiscal_snapshot_actions'
+    )
+    performed_at = models.DateTimeField(auto_now_add=True)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-performed_at']
+
+    def __str__(self):
+        return f"FY{self.fiscal_year} {self.action} ({self.scope_rows} rows) @ {self.performed_at:%Y-%m-%d}"

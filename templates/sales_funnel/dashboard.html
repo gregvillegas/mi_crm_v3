@@ -151,7 +151,7 @@
     .kpi-stage-link{color:inherit;text-decoration:none;display:block;border-radius:.4rem;padding:.15rem 0;transition:background-color .15s ease;}
     .kpi-stage-link:hover,.kpi-stage-link:focus{background-color:rgba(255,255,255,.15);color:#fff;}
     </style>
-    <div class="col-lg-3 col-md-4 col-sm-6 mb-3">
+    <div class="col-lg-4 col-md-4 col-sm-6 mb-3">
         <div class="card bg-dark text-white kpi-card">
             <div class="card-body">
                 <div class="row text-center">
@@ -256,11 +256,12 @@
                     <a href="{% url 'sales_funnel:dashboard' %}" class="btn btn-outline-secondary">
                         <i class="fas fa-times"></i> Clear
                     </a>
-                    {% if not can_add or user.role == 'avp' or user.role == 'sm' or user.role == 'asm' or user.role == 'supervisor' %}
+                    <!-- Export is available to everyone with funnel access; the
+                         server scopes the data per role (a salesperson exports
+                         only their own active pipeline). -->
                     <button type="button" class="btn btn-outline-success" onclick="exportFunnel()">
                         <i class="fas fa-file-export"></i> Export Excel
                     </button>
-                    {% endif %}
                 </div>
             </div>
         </form>

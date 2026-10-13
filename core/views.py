@@ -115,6 +115,7 @@ def home(request):
             'quoted_count': funnel_entries.filter(stage='quoted').count(),
             'closable_count': funnel_entries.filter(stage='closable').count(),
             'project_count': funnel_entries.filter(stage='project').count(),
+            'services_count': funnel_entries.filter(stage='services').count(),
             'total_value': funnel_entries.aggregate(Sum('retail'))['retail__sum'] or 0,
             'total_entries': funnel_entries.count(),
         }

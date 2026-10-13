@@ -1,0 +1,245 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block title %}Fiscal Year Comparison{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 mt-3 gap-2">
+        <div>
+            <h2 class="mb-1"><i class="fas fa-scale-balanced text-primary"></i> Fiscal Year Comparison</h2>
+            <div class="text-muted">Scope: <strong>{{ scope_name }}</strong>
+                {% if mode == 'ytd' and months_through %}<span class="badge bg-warning text-dark ms-2">Same-period YTD</span>{% endif %}
+            </div>
+        </div>
+        <div class="d-flex gap-2">
+            <a class="btn btn-outline-success"
+               href="{% url 'sales_monitoring:export_fiscal_year_comparison_excel' %}?fy={{ fy }}&mode={{ mode }}&scope_type={{ scope_type }}&scope_id={{ scope_id }}">
+                <i class="fas fa-file-excel"></i> Excel
+            </a>
+            <a class="btn btn-outline-danger"
+               href="{% url 'sales_monitoring:export_fiscal_year_comparison_pdf' %}?fy={{ fy }}&mode={{ mode }}&scope_type={{ scope_type }}&scope_id={{ scope_id }}">
+                <i class="fas fa-file-pdf"></i> PDF
+            </a>
+        </div>
+    </div>
+
+    <!-- Controls -->
+    <form method="get" class="card card-body mb-4">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small text-muted mb-1">Fiscal year</label>
+                <select name="fy" class="form-select form-select-sm">
+                    {% for y in available_years %}
+                    <option value="{{ y }}" {% if y == fy %}selected{% endif %}>FY{{ y }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small text-muted mb-1">Comparison window</label>
+                <select name="mode" class="form-select form-select-sm">
+                    <option value="full" {% if mode == 'full' %}selected{% endif %}>Full prior year</option>
+                    <option value="ytd" {% if mode == 'ytd' %}selected{% endif %}>Same period last year (YTD)</option>
+                </select>
+            </div>
+            {% if is_exec %}
+            <div class="col-md-4">
+                <label class="form-label small text-muted mb-1">Drill into</label>
+                <select name="_scope" class="form-select form-select-sm"
+                        onchange="const v=this.value.split('|');document.getElementById('scope_type').value=v[0];document.getElementById('scope_id').value=v[1];">
+                    <option value="company|0" {% if scope_type == 'company' %}selected{% endif %}>Company (all)</option>
+                    <optgroup label="Teams">
+                        {% for t in scope_teams %}
+                        <option value="team|{{ t.id }}" {% if scope_type == 'team' and scope_id == t.id %}selected{% endif %}>{{ t.name }}</option>
+                        {% endfor %}
+                    </optgroup>
+                    <optgroup label="Groups">
+                        {% for g in scope_groups %}
+                        <option value="group|{{ g.id }}" {% if scope_type == 'group' and scope_id == g.id %}selected{% endif %}>{{ g.team.name }} — {{ g.name }}</option>
+                        {% endfor %}
+                    </optgroup>
+                </select>
+                <input type="hidden" name="scope_type" id="scope_type" value="{{ scope_type }}">
+                <input type="hidden" name="scope_id" id="scope_id" value="{{ scope_id }}">
+            </div>
+            {% endif %}
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary btn-sm w-100">
+                    <i class="fas fa-sync"></i> Apply
+                </button>
+            </div>
+        </div>
+    </form>
+
+    <!-- Year headers -->
+    <div class="row mb-4">
+        <div class="col-md-6 mb-2">
+            <div class="card border-primary h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <h5 class="mb-1">FY{{ fy }}</h5>
+                            <small class="text-muted">{{ fy_label }}</small>
+                        </div>
+                        {% if cur.source == 'frozen' %}
+                            <span class="badge bg-secondary"><i class="fas fa-lock me-1"></i>Frozen snapshot</span>
+                        {% else %}
+                            <span class="badge bg-info"><i class="fas fa-bolt me-1"></i>Live</span>
+                        {% endif %}
+                    </div>
+                    <h3 class="text-success mt-2 mb-0">₱{{ cur.total_profit|floatformat:0|intcomma }}</h3>
+                    <small class="text-muted">Total profit</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6 mb-2">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <h5 class="mb-1">FY{{ prev_fy }}</h5>
+                            <small class="text-muted">{{ prev_fy_label }}</small>
+                        </div>
+                        {% if prev.source == 'frozen' %}
+                            <span class="badge bg-secondary"><i class="fas fa-lock me-1"></i>Frozen snapshot</span>
+                        {% else %}
+                            <span class="badge bg-info"><i class="fas fa-bolt me-1"></i>Live</span>
+                        {% endif %}
+                    </div>
+                    <h3 class="text-muted mt-2 mb-0">₱{{ prev.total_profit|floatformat:0|intcomma }}</h3>
+                    <small class="text-muted">Total profit</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if cur.source == 'live' or prev.source == 'live' %}
+    <div class="alert alert-info d-flex align-items-start gap-2">
+        <i class="fas fa-circle-info mt-1"></i>
+        <div>
+            A year shown as <strong>Live</strong> is computed from current funnel data and can still change;
+            a <strong>Frozen snapshot</strong> is a permanent year-end record. Run
+            <code>python manage.py snapshot_fiscal_year {{ prev_fy }}</code> after that fiscal year ends to freeze it.
+            {% if mode == 'ytd' and months_through %}
+            This view compares the <strong>same Dec-through-current-month window</strong> in both years for a fair mid-year read.
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Metric comparison table -->
+    <div class="card mb-4">
+        <div class="card-header bg-dark text-white">
+            <h5 class="mb-0">Year-over-Year Metrics</h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Metric</th>
+                            <th class="text-end">FY{{ fy }}</th>
+                            <th class="text-end">FY{{ prev_fy }}</th>
+                            <th class="text-end">Change</th>
+                            <th class="text-end">% Change</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for m in metrics %}
+                        <tr>
+                            <td class="fw-semibold">{{ m.label }}</td>
+                            <td class="text-end">
+                                {% if m.money %}₱{{ m.cur|floatformat:0|intcomma }}
+                                {% elif m.is_pct %}{{ m.cur|floatformat:1 }}%
+                                {% else %}{{ m.cur|floatformat:0|intcomma }}{% endif %}
+                            </td>
+                            <td class="text-end text-muted">
+                                {% if m.money %}₱{{ m.prev|floatformat:0|intcomma }}
+                                {% elif m.is_pct %}{{ m.prev|floatformat:1 }}%
+                                {% else %}{{ m.prev|floatformat:0|intcomma }}{% endif %}
+                            </td>
+                            <td class="text-end {% if m.delta.diff > 0 %}text-success{% elif m.delta.diff < 0 %}text-danger{% endif %}">
+                                {% if m.delta.diff > 0 %}+{% endif %}
+                                {% if m.money %}₱{{ m.delta.diff|floatformat:0|intcomma }}
+                                {% elif m.is_pct %}{{ m.delta.diff|floatformat:1 }} pts
+                                {% else %}{{ m.delta.diff|floatformat:0|intcomma }}{% endif %}
+                            </td>
+                            <td class="text-end {% if m.delta.pct > 0 %}text-success{% elif m.delta.pct < 0 %}text-danger{% endif %}">
+                                {% if m.delta.pct is None %}
+                                    <span class="text-muted">—</span>
+                                {% else %}
+                                    {% if m.delta.pct > 0 %}<i class="fas fa-arrow-up"></i>
+                                    {% elif m.delta.pct < 0 %}<i class="fas fa-arrow-down"></i>{% endif %}
+                                    {{ m.delta.pct|floatformat:1 }}%
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Month-by-month overlay -->
+    <div class="card">
+        <div class="card-header bg-dark text-white">
+            <h5 class="mb-0">Month-by-Month Profit (Dec–Nov)</h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Month</th>
+                            <th class="text-end">FY{{ fy }}</th>
+                            <th class="text-end">FY{{ prev_fy }}</th>
+                            <th class="text-end">Change</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in monthly_rows %}
+                        <tr>
+                            <td class="fw-semibold">{{ row.label }}</td>
+                            <td class="text-end">₱{{ row.cur|floatformat:0|intcomma }}</td>
+                            <td class="text-end text-muted">₱{{ row.prev|floatformat:0|intcomma }}</td>
+                            <td class="text-end {% if row.delta.diff > 0 %}text-success{% elif row.delta.diff < 0 %}text-danger{% endif %}">
+                                {% if row.delta.diff > 0 %}+{% endif %}₱{{ row.delta.diff|floatformat:0|intcomma }}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    {% if cur.quota %}
+    <div class="row mt-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="text-muted mb-1">FY{{ fy }} Quota Attainment</h6>
+                    <h4 class="mb-0">
+                        {{ cur.attainment_pct|floatformat:1 }}%
+                        <small class="text-muted">of ₱{{ cur.quota|floatformat:0|intcomma }}</small>
+                    </h4>
+                </div>
+            </div>
+        </div>
+        {% if prev.quota %}
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="text-muted mb-1">FY{{ prev_fy }} Quota Attainment</h6>
+                    <h4 class="mb-0 text-muted">
+                        {{ prev.attainment_pct|floatformat:1 }}%
+                        <small>of ₱{{ prev.quota|floatformat:0|intcomma }}</small>
+                    </h4>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

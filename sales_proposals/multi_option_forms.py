@@ -32,6 +32,7 @@ class MultiOptionProposalForm(ProposalForm):
             'show_vat',
             'use_availability_column',
             'hide_part_number',
+            'is_test',
             'include_bank_details',
             # Bank details
             'php_bank_name', 'php_account_name', 'php_account_number', 'php_account_type',
@@ -78,6 +79,9 @@ class MultiOptionProposalForm(ProposalForm):
             sp_ids = TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True)
             qs = qs.filter(Q(salesperson_id__in=sp_ids) | Q(salesperson=self.user))
         self.fields['customer'].queryset = qs
+        # Blank the empty option label ("---------") so the searchable Customer
+        # control shows only its placeholder, matching the single-format form.
+        self.fields['customer'].empty_label = ''
 
         # Bank detail fields are optional — only used if include_bank_details is checked
         bank_fields = [

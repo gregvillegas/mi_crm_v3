@@ -382,7 +382,13 @@
 </div>
 
 {% block extra_css %}
+<!-- Tom Select: lightweight searchable dropdown (no jQuery dependency) -->
+<link href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css" rel="stylesheet">
 <style>
+/* Make the searchable Customer control match the height/feel of other inputs */
+.ts-wrapper.form-select { padding: 0; }
+.ts-control { min-height: 38px; border-radius: .375rem; }
+.ts-dropdown { z-index: 1056; } /* sit above cards/modals */
 /* Hide spinners for unit_cost and unit_price only */
 input.no-spin::-webkit-outer-spin-button,
 input.no-spin::-webkit-inner-spin-button {
@@ -425,8 +431,26 @@ input.no-spin {
 </style>
 {% endblock %}
 
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // Make the Customer dropdown type-to-search. Tom Select keeps the original
+    // <select>'s id/name and dispatches a native 'change' event on selection,
+    // so the dependent Contact Person logic below continues to work unchanged.
+    (function initCustomerSearch() {
+        const el = document.getElementById('id_customer');
+        if (!el || typeof TomSelect === 'undefined' || el.tomselect) return;
+        new TomSelect(el, {
+            create: false,
+            // Empty option kept in the <select> for validation, but hidden from
+            // the dropdown list so no blank/"---------" row shows.
+            allowEmptyOption: false,
+            maxOptions: null,            // show all matches, don't cap the list
+            sortField: { field: 'text', direction: 'asc' },
+            placeholder: 'Type a company name to search…',
+        });
+    })();
+
     // Items handling
     const container = document.getElementById('items-container');
     const addButton = document.getElementById('add-item-btn');

@@ -411,8 +411,11 @@ def can_manage_company_target(user):
 def update_company_target(request):
     from .models import CompanyAnnualTarget, CompanyAnnualTargetLog
     from .forms import CompanyAnnualTargetForm
+    from sales_monitoring.fiscal import fiscal_year_for_date
     today = timezone.now().date()
-    current_year = today.year
+    # CompanyAnnualTarget.year is the FISCAL year (Dec 1 -> Nov 30, named by the
+    # year it ends in), matching the fiscal definition used across reporting.
+    current_year = fiscal_year_for_date(today)
     target = CompanyAnnualTarget.objects.filter(year=current_year).first()
     if request.method == 'POST':
         form = CompanyAnnualTargetForm(request.POST, instance=target)
@@ -437,7 +440,12 @@ def update_company_target(request):
         else:
             form = CompanyAnnualTargetForm(initial={'year': current_year})
     logs = CompanyAnnualTargetLog.objects.filter(target__year=current_year)[:10]
-    return render(request, 'teams/update_company_target.html', {'form': form, 'logs': logs, 'title': f'Update Company Annual Target ({current_year})'})
+    return render(request, 'teams/update_company_target.html', {
+        'form': form,
+        'logs': logs,
+        'fiscal_year': current_year,
+        'title': f'Update Company Annual Target (FY{current_year})',
+    })
 
 @login_required
 def quota_management(request):

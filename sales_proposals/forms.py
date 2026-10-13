@@ -118,6 +118,9 @@ class ProposalForm(forms.ModelForm):
             sp_ids = TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True)
             qs = qs.filter(Q(salesperson_id__in=sp_ids) | Q(salesperson=self.user))
         self.fields['customer'].queryset = qs
+        # Render the blank option with no text (instead of "---------") so the
+        # searchable Customer control shows only its placeholder, not a dashes row.
+        self.fields['customer'].empty_label = ''
         self.fields['discount_amount'].required = False
         # All bank detail fields are optional
         bank_fields = [
