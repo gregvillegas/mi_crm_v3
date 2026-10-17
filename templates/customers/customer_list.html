@@ -144,7 +144,7 @@
                     <i class="fas fa-database"></i><span class="btn-label">Backup System</span>
                 </a>
                 {% endif %}
-                <a href="{% url 'export_customers' %}" class="btn btn-success btn-sm customer-icon-btn" title="Export CSV" aria-label="Export CSV">
+                <a href="{% url 'export_customers' %}{% if preserved_query %}?{{ preserved_query }}{% endif %}" class="btn btn-success btn-sm customer-icon-btn" title="Export CSV" aria-label="Export CSV">
                     <i class="fas fa-download"></i><span class="btn-label">Export CSV</span>
                 </a>
                 <a href="{% url 'import_customers' %}" class="btn btn-warning btn-sm customer-icon-btn" title="Import CSV" aria-label="Import CSV">
@@ -364,11 +364,16 @@
                 </select>
             </div>
             {% endif %}
-            <div class="col-md-1">
+            <div class="col-md-2">
                 <label class="form-label">&nbsp;</label>
-                <div class="d-flex gap-1">
+                <div class="d-flex gap-1 flex-wrap">
                     <button type="submit" class="btn btn-primary btn-sm">Filter</button>
                     <a href="{% url 'customer_list' %}" class="btn btn-outline-secondary btn-sm">Clear</a>
+                    {% if can_export_customers %}
+                    <button type="submit" formaction="{% url 'export_customers' %}" class="btn btn-success btn-sm">
+                        Export
+                    </button>
+                    {% endif %}
                 </div>
             </div>
         </form>

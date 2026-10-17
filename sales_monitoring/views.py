@@ -2100,7 +2100,13 @@ def get_executive_dashboard_data():
     
     # 4. Individual Performance
     individual_performance = []
-    all_salespeople = User.objects.filter(role='salesperson', is_active=True)
+    # Rankings should only include active salespeople who are assigned to a
+    # group/team. Unassigned users should not appear in the executive rankings.
+    all_salespeople = User.objects.filter(
+        role='salesperson',
+        is_active=True,
+        team_membership__isnull=False,
+    ).select_related('team_membership__group__team')
     
     for salesperson in all_salespeople:
         # Get funnel data

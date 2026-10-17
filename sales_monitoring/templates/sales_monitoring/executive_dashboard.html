@@ -107,6 +107,32 @@
     .performance-table {
         font-size: 0.9rem;
     }
+
+    .performance-person {
+        min-width: 0;
+    }
+
+    .performance-person-meta {
+        min-width: 0;
+        overflow: hidden;
+        max-width: 180px;
+        line-height: 1.15;
+    }
+
+    .performance-person-name {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .performance-person-username {
+        display: block;
+        margin-top: 0.15rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
     
     .performance-badge {
         font-size: 0.8rem;
@@ -590,7 +616,7 @@
                                         {% endif %}
                                     </td>
                                     <td>
-                                        <div class="d-flex align-items-center">
+                                        <div class="d-flex align-items-center performance-person">
                                             {% if performer.salesperson.profile_picture %}
                                                 <img src="{{ performer.salesperson.profile_picture.url }}" alt="{{ performer.salesperson.username }}" class="rounded-circle me-2" style="width: 40px; height: 40px; object-fit: cover;">
                                             {% else %}
@@ -598,9 +624,9 @@
                                                     {{ performer.salesperson.initials|default:performer.salesperson.username|make_list|first|upper }}
                                                 </div>
                                             {% endif %}
-                                            <div>
-                                                <strong>{{ performer.name }}</strong><br>
-                                                <small class="text-muted">{{ performer.salesperson.username }}</small>
+                                            <div class="performance-person-meta">
+                                                <strong class="performance-person-name" title="{{ performer.name }}">{{ performer.name }}</strong>
+                                                <small class="text-muted performance-person-username">{{ performer.salesperson.username }}</small>
                                             </div>
                                         </div>
                                     </td>
@@ -618,8 +644,8 @@
                                     </td>
                                     <td>
                                         <div class="d-flex align-items-center">
-                                            <small>{{ performer.activities_this_month }} activities</small><br>
-                                            <div class="progress mt-1" style="height: 4px; width: 60px;">
+                                            <small title="{{ performer.activities_this_month }} activities">{{ performer.activities_this_month }}</small>
+                                            <div class="progress ms-2" style="height: 4px; width: 60px;">
                                                 <div class="progress-bar" role="progressbar" 
                                                      style="width: {{ performer.activity_completion_rate }}%"
                                                      aria-valuenow="{{ performer.activity_completion_rate }}" 

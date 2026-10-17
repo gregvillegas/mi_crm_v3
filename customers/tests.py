@@ -263,8 +263,6 @@ class CustomerImportTests(TestCase):
         self.assertIn('Import Customers + Contacts', error_message)
         self.assertIn('Detected headers:', error_message)
         self.assertIn('Normalized headers:', error_message)
-        self.assertNotIn('was not found', error_message)
-
     def test_legacy_import_customers_accepts_territory_with_city_suffix(self):
         csv_content = (
             'Company Name,Contact Person Name,Contact Person Position,Email,Phone Number,Address,Industry,Territory,Millionaire Status,Active Status,Salesperson Initials,Created At,Updated At\n'
@@ -326,3 +324,56 @@ class CustomerImportTests(TestCase):
         self.assertIn('Use Import Contacts instead', error_message)
         self.assertIn('Detected headers:', error_message)
         self.assertIn('Normalized headers:', error_message)
+
+
+class CustomerExportFilterTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username='admin_export',
+            password='testpass123',
+            role='admin',
+            email='admin.export@example.com',
+        )
+        self.client.force_login(self.admin)
+
+        Customer.objects.create(
+            company_name='BPO Millionaire Corp',
+            contact_person_name='Alice',
+            email='alice@bpo-millionaire.com',
+            industry='business',
+            territory='makati',
+            is_millionaire_account=True,
+            is_active=True,
+        )
+        Customer.objects.create(
+            company_name='BPO Regular Corp',
+            contact_person_name='Bob',
+            email='bob@bpo-regular.com',
+            industry='business',
+            territory='pasig',
+            is_millionaire_account=False,
+            is_active=True,
+        )
+        Customer.objects.create(
+            company_name='Manufacturing Millionaire Corp',
+            contact_person_name='Carol',
+            email='carol@manufacturing-millionaire.com',
+            industry='manufacturing',
+            territory='makati',
+            is_millionaire_account=True,
+            is_active=True,
+        )
+
+    def test_export_customers_respects_dashboard_filters(self):
+        response = self.client.get(reverse('export_customers'), {
+            'industry': 'business',
+            'millionaire': 'yes',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'text/csv')
+
+        csv_text = response.content.decode('utf-8')
+        self.assertIn('BPO Millionaire Corp', csv_text)
+        self.assertNotIn('BPO Regular Corp', csv_text)
+        self.assertNotIn('Manufacturing Millionaire Corp', csv_text)

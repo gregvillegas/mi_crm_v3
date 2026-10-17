@@ -207,6 +207,10 @@
         .notification-menu {
             width: 360px;
             max-width: 90vw;
+            max-height: min(70vh, calc(100vh - 100px));
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            -webkit-overflow-scrolling: touch;
         }
         .notification-item {
             white-space: normal;

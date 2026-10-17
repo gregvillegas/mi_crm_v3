@@ -5,7 +5,7 @@ from decimal import Decimal
 from users.models import User
 from teams.models import Team, Group, TeamMembership, SupervisorCommitment
 from sales_funnel.models import SalesFunnel
-from sales_monitoring.views import team_performance
+from sales_monitoring.views import team_performance, get_executive_dashboard_data
 
 class SupervisorCommitmentTests(TestCase):
     def setUp(self):
@@ -68,4 +68,93 @@ class SupervisorCommitmentTests(TestCase):
         self.assertIsNotNone(gdata)
         self.assertEqual(Decimal(gdata['group_quota']), Decimal('300000.00'))
 
-# Create your tests here.
+
+class ExecutiveDashboardRankingTests(TestCase):
+    def setUp(self):
+        self.avp = User.objects.create_user(username='avp_exec', password='pass', role='avp')
+        self.supervisor = User.objects.create_user(username='sup_exec', password='pass', role='supervisor')
+        self.team = Team.objects.create(name='TEAM EXEC', avp=self.avp)
+        self.group = Group.objects.create(
+            name='Group Exec',
+            team=self.team,
+            group_type='regular',
+            supervisor=self.supervisor,
+        )
+
+        self.assigned_salesperson = User.objects.create_user(
+            username='assigned_sp',
+            password='pass',
+            role='salesperson',
+            first_name='Assigned',
+            last_name='Rep',
+        )
+        TeamMembership.objects.create(
+            user=self.assigned_salesperson,
+            group=self.group,
+            quota=Decimal('100000.00'),
+        )
+
+        self.unassigned_salesperson = User.objects.create_user(
+            username='unassigned_sp',
+            password='pass',
+            role='salesperson',
+            first_name='Unassigned',
+            last_name='Rep',
+        )
+        self.inactive_salesperson = User.objects.create_user(
+            username='inactive_sp',
+            password='pass',
+            role='salesperson',
+            first_name='Inactive',
+            last_name='Rep',
+            is_active=False,
+        )
+        TeamMembership.objects.create(
+            user=self.inactive_salesperson,
+            group=self.group,
+            quota=Decimal('100000.00'),
+        )
+
+        today = timezone.now().date()
+        SalesFunnel.objects.create(
+            date_created=today,
+            company_name='Assigned Co',
+            requirement_description='Assigned deal',
+            cost=Decimal('100000.00'),
+            retail=Decimal('300000.00'),
+            stage='quoted',
+            salesperson=self.assigned_salesperson,
+            deal_outcome='won',
+            closed_date=today,
+        )
+        SalesFunnel.objects.create(
+            date_created=today,
+            company_name='Unassigned Co',
+            requirement_description='Unassigned deal',
+            cost=Decimal('100000.00'),
+            retail=Decimal('900000.00'),
+            stage='quoted',
+            salesperson=self.unassigned_salesperson,
+            deal_outcome='won',
+            closed_date=today,
+        )
+        SalesFunnel.objects.create(
+            date_created=today,
+            company_name='Inactive Co',
+            requirement_description='Inactive deal',
+            cost=Decimal('100000.00'),
+            retail=Decimal('800000.00'),
+            stage='quoted',
+            salesperson=self.inactive_salesperson,
+            deal_outcome='won',
+            closed_date=today,
+        )
+
+    def test_individual_rankings_exclude_unassigned_and_inactive_salespeople(self):
+        data = get_executive_dashboard_data()
+
+        usernames = [item['salesperson'].username for item in data['individual_performance']]
+
+        self.assertIn(self.assigned_salesperson.username, usernames)
+        self.assertNotIn(self.unassigned_salesperson.username, usernames)
+        self.assertNotIn(self.inactive_salesperson.username, usernames)

@@ -37,6 +37,168 @@ def is_executive(user):
 def is_admin_or_exec(user):
     return user.role in ['admin', 'gm', 'vp', 'marketing']
 
+
+def can_export_customers(user):
+    return user.role in ['admin', 'gm', 'vp', 'marketing']
+
+
+def _build_customer_list_state(user, params):
+    customers = visible_customers_queryset(user)
+    view_mode = params.get('view', 'table')
+
+    # Apply filters based on GET parameters
+    status_filter = params.get('status')
+    millionaire_filter = params.get('millionaire') or params.get('vip')
+    industry_filter = params.get('industry')
+    territory_filter = params.get('territory')
+    search_query = params.get('search')
+    salesperson_filter = params.get('salesperson')
+    team_filter = params.get('team')
+    group_filter = params.get('group')
+
+    if status_filter == 'active':
+        customers = customers.filter(is_active=True, auto_inactive_flag=False)
+    elif status_filter == 'inactive':
+        customers = customers.filter(models.Q(is_active=False) | models.Q(auto_inactive_flag=True))
+
+    if millionaire_filter == 'yes':
+        customers = customers.filter(is_millionaire_account=True)
+    elif millionaire_filter == 'no':
+        customers = customers.filter(is_millionaire_account=False)
+
+    if industry_filter and industry_filter != '':
+        customers = customers.filter(industry=industry_filter)
+
+    if territory_filter and territory_filter != '':
+        customers = customers.filter(territory=territory_filter)
+
+    if search_query:
+        customers = customers.filter(
+            models.Q(company_name__icontains=search_query) |
+            models.Q(contact_person_name__icontains=search_query) |
+            models.Q(email__icontains=search_query)
+        )
+
+    if salesperson_filter:
+        if salesperson_filter == 'unassigned':
+            customers = customers.filter(salesperson__isnull=True)
+        else:
+            try:
+                customers = customers.filter(salesperson_id=int(salesperson_filter))
+            except ValueError:
+                pass
+
+    show_team_group_filters = user.role in ['admin', 'gm', 'vp', 'president', 'avp']
+    show_group_filter = user.role in ['asm', 'sm']
+    if show_team_group_filters:
+        if team_filter:
+            try:
+                customers = customers.filter(
+                    salesperson__team_membership__group__team_id=int(team_filter)
+                )
+            except (ValueError, TypeError):
+                pass
+        if group_filter:
+            try:
+                customers = customers.filter(
+                    salesperson__team_membership__group_id=int(group_filter)
+                )
+            except (ValueError, TypeError):
+                pass
+    elif show_group_filter:
+        if user.role == 'asm':
+            allowed_groups = asm_scoped_groups(user)
+        else:
+            allowed_groups = user.sm_groups.all()
+        allowed_group_ids = set(allowed_groups.values_list('id', flat=True))
+        if group_filter:
+            try:
+                if int(group_filter) in allowed_group_ids:
+                    customers = customers.filter(
+                        salesperson__team_membership__group_id=int(group_filter)
+                    )
+                else:
+                    group_filter = ''
+            except (ValueError, TypeError):
+                group_filter = ''
+
+    duplicates_filter = params.get('duplicates', '')
+    duplicate_groups = []
+    if duplicates_filter == 'yes' and user.role in ['admin', 'gm', 'vp', 'marketing', 'avp', 'asm', 'sm', 'supervisor']:
+        from collections import defaultdict
+        norm_map = defaultdict(list)
+        for customer in customers.only('id', 'company_name'):
+            norm = _normalize_company_name(customer.company_name)
+            if norm:
+                norm_map[norm].append(customer.id)
+        dup_ids = set()
+        for norm_name, ids in norm_map.items():
+            if len(ids) >= 2:
+                dup_ids.update(ids)
+                duplicate_groups.append({
+                    'normalized_name': norm_name,
+                    'ids': ids,
+                })
+        if dup_ids:
+            customers = customers.filter(id__in=dup_ids)
+        else:
+            customers = customers.none()
+
+    if duplicates_filter == 'yes':
+        customers = customers.select_related('salesperson').order_by('company_name')
+    else:
+        customers = customers.select_related('salesperson').order_by('-is_millionaire_account', '-created_at')
+
+    available_salespeople = assignment_targets_queryset(user)
+
+    available_teams = []
+    available_groups = []
+    if show_team_group_filters:
+        if user.role == 'avp':
+            avp_team_ids = get_user_team_ids(user)
+            available_teams = Team.objects.filter(id__in=avp_team_ids).order_by('name')
+            available_groups = (
+                Group.objects.select_related('team')
+                .filter(team_id__in=avp_team_ids)
+                .order_by('team__name', 'name')
+            )
+        else:
+            available_teams = Team.objects.all().order_by('name')
+            available_groups = Group.objects.select_related('team').all().order_by('team__name', 'name')
+    elif show_group_filter:
+        if user.role == 'asm':
+            scoped_groups = asm_scoped_groups(user)
+        else:
+            scoped_groups = user.sm_groups.all()
+        available_groups = (
+            Group.objects.select_related('team')
+            .filter(id__in=scoped_groups.values_list('id', flat=True))
+            .order_by('team__name', 'name')
+        )
+
+    return {
+        'customers': customers,
+        'view_mode': view_mode,
+        'show_team_group_filters': show_team_group_filters,
+        'show_group_filter': show_group_filter,
+        'available_salespeople': available_salespeople,
+        'available_teams': available_teams,
+        'available_groups': available_groups,
+        'duplicate_groups': duplicate_groups,
+        'current_filters': {
+            'status': status_filter,
+            'millionaire': millionaire_filter,
+            'industry': industry_filter,
+            'territory': territory_filter,
+            'search': search_query or '',
+            'salesperson': salesperson_filter or '',
+            'team': team_filter or '',
+            'group': group_filter or '',
+            'duplicates': duplicates_filter or '',
+            'view': view_mode,
+        },
+    }
+
 @login_required
 def add_customer_note(request, pk):
     customer = get_object_or_404(Customer, pk=pk)
@@ -59,155 +221,15 @@ def add_customer_note(request, pk):
 @login_required
 def customer_list(request):
     user = request.user
-    customers = visible_customers_queryset(user)
-    view_mode = request.GET.get('view', 'table')
-
-    # Apply filters based on GET parameters
-    status_filter = request.GET.get('status')
-    millionaire_filter = request.GET.get('millionaire') or request.GET.get('vip')
-    industry_filter = request.GET.get('industry')
-    territory_filter = request.GET.get('territory')
-    search_query = request.GET.get('search')
-    salesperson_filter = request.GET.get('salesperson')
-    team_filter = request.GET.get('team')
-    group_filter = request.GET.get('group')
-    
-    if status_filter == 'active':
-        customers = customers.filter(is_active=True, auto_inactive_flag=False)
-    elif status_filter == 'inactive':
-        customers = customers.filter(models.Q(is_active=False) | models.Q(auto_inactive_flag=True))
-    
-    if millionaire_filter == 'yes':
-        customers = customers.filter(is_millionaire_account=True)
-    elif millionaire_filter == 'no':
-        customers = customers.filter(is_millionaire_account=False)
-    
-    if industry_filter and industry_filter != '':
-        customers = customers.filter(industry=industry_filter)
-    
-    if territory_filter and territory_filter != '':
-        customers = customers.filter(territory=territory_filter)
-    
-    if search_query:
-        customers = customers.filter(
-            models.Q(company_name__icontains=search_query) |
-            models.Q(contact_person_name__icontains=search_query) |
-            models.Q(email__icontains=search_query)
-        )
-    
-    # Salesperson filter
-    if salesperson_filter:
-        if salesperson_filter == 'unassigned':
-            customers = customers.filter(salesperson__isnull=True)
-        else:
-            try:
-                sp_id = int(salesperson_filter)
-                customers = customers.filter(salesperson_id=sp_id)
-            except ValueError:
-                pass
-
-    # Team / Group filters (granular search for executive roles + AVP).
-    # Path: Customer.salesperson -> TeamMembership.group -> Group.team
-    #
-    # Execs + AVP get BOTH a Team and a Group dropdown. ASM/SM get ONLY a Group
-    # dropdown, limited to the groups THEY handle (option A) — mirroring the
-    # Sales Proposals dashboard. The selected group is validated against that
-    # allowed set so a hand-typed ?group= can't widen the (already-scoped) view.
-    show_team_group_filters = user.role in ['admin', 'gm', 'vp', 'president', 'avp']
-    show_group_filter = user.role in ['asm', 'sm']
-    if show_team_group_filters:
-        if team_filter:
-            try:
-                customers = customers.filter(
-                    salesperson__team_membership__group__team_id=int(team_filter)
-                )
-            except (ValueError, TypeError):
-                pass
-        if group_filter:
-            try:
-                customers = customers.filter(
-                    salesperson__team_membership__group_id=int(group_filter)
-                )
-            except (ValueError, TypeError):
-                pass
-    elif show_group_filter:
-        if user.role == 'asm':
-            allowed_groups = asm_scoped_groups(user)
-        else:  # sm
-            allowed_groups = user.sm_groups.all()
-        allowed_group_ids = set(allowed_groups.values_list('id', flat=True))
-        if group_filter:
-            try:
-                if int(group_filter) in allowed_group_ids:
-                    customers = customers.filter(
-                        salesperson__team_membership__group_id=int(group_filter)
-                    )
-                else:
-                    group_filter = ''
-            except (ValueError, TypeError):
-                group_filter = ''
-    
-    # Duplicates filter — show only customers with similar/duplicate company names
-    duplicates_filter = request.GET.get('duplicates', '')
-    duplicate_groups = []
-    if duplicates_filter == 'yes' and user.role in ['admin', 'gm', 'vp', 'marketing', 'avp', 'asm', 'sm', 'supervisor']:
-        from collections import defaultdict
-        # Build a map of normalized name → list of customer IDs
-        norm_map = defaultdict(list)
-        for c in customers.only('id', 'company_name'):
-            norm = _normalize_company_name(c.company_name)
-            if norm:
-                norm_map[norm].append(c.id)
-        # Keep only groups with 2+ customers (exact-match after normalization)
-        dup_ids = set()
-        for norm_name, ids in norm_map.items():
-            if len(ids) >= 2:
-                dup_ids.update(ids)
-                duplicate_groups.append({
-                    'normalized_name': norm_name,
-                    'ids': ids,
-                })
-        if dup_ids:
-            customers = customers.filter(id__in=dup_ids)
-        else:
-            customers = customers.none()
-
-    # Order by millionaire status first, then by creation date
-    if duplicates_filter == 'yes':
-        customers = customers.select_related('salesperson').order_by('company_name')
-    else:
-        customers = customers.select_related('salesperson').order_by('-is_millionaire_account', '-created_at')
-    
-    # Available salespeople for filter dropdown (active only)
-    available_salespeople = assignment_targets_queryset(user)
-
-    # Team / Group options for granular filtering.
-    # Executives see all teams/groups; AVP is scoped to their managed teams only.
-    available_teams = []
-    available_groups = []
-    if show_team_group_filters:
-        if user.role == 'avp':
-            avp_team_ids = get_user_team_ids(user)
-            available_teams = Team.objects.filter(id__in=avp_team_ids).order_by('name')
-            available_groups = (
-                Group.objects.select_related('team')
-                .filter(team_id__in=avp_team_ids)
-                .order_by('team__name', 'name')
-            )
-        else:
-            available_teams = Team.objects.all().order_by('name')
-            available_groups = Group.objects.select_related('team').all().order_by('team__name', 'name')
-    elif show_group_filter:
-        # ASM/SM: Group dropdown limited to the groups they handle.
-        if user.role == 'asm':
-            scoped_groups = asm_scoped_groups(user)
-        else:  # sm
-            scoped_groups = user.sm_groups.all()
-        available_groups = (
-            Group.objects.select_related('team')
-            .filter(id__in=scoped_groups.values_list('id', flat=True))
-            .order_by('team__name', 'name')
-        )
+    state = _build_customer_list_state(user, request.GET)
+    customers = state['customers']
+    view_mode = state['view_mode']
+    show_team_group_filters = state['show_team_group_filters']
+    show_group_filter = state['show_group_filter']
+    available_salespeople = state['available_salespeople']
+    available_teams = state['available_teams']
+    available_groups = state['available_groups']
+    duplicate_groups = state['duplicate_groups']
     
     # Determine if user can see admin actions column
     # Admin, VP, GM, Marketing: Full access
@@ -263,18 +285,10 @@ def customer_list(request):
         'show_team_group_filters': show_team_group_filters,
         'show_group_filter': show_group_filter,
         'current_filters': {
-            'status': status_filter,
-            'millionaire': millionaire_filter,
-            'industry': industry_filter,
-            'territory': territory_filter,
-            'search': search_query or '',
-            'salesperson': salesperson_filter or '',
-            'team': team_filter or '',
-            'group': group_filter or '',
-            'duplicates': duplicates_filter or '',
-            'view': view_mode,
+            **state['current_filters'],
             'per_page': per_page,
         },
+        'can_export_customers': can_export_customers(user),
         'stats': stats,
         'pending_create_count': pending_create_count,
         'duplicate_group_count': len(duplicate_groups),
@@ -752,9 +766,9 @@ def _customer_with_contacts_header():
 
 
 @login_required
-@user_passes_test(is_admin)
+@user_passes_test(can_export_customers)
 def export_customers(request):
-    """Export all customers to CSV"""
+    """Export customers to CSV using the same filters as the customer dashboard."""
     response = HttpResponse(content_type='text/csv')
     response['Content-Disposition'] = 'attachment; filename="customers_export.csv"'
     
@@ -766,8 +780,8 @@ def export_customers(request):
         'Created At', 'Updated At'
     ])
     
-    # Write customer data
-    customers = Customer.objects.all().select_related('salesperson')
+    state = _build_customer_list_state(request.user, request.GET)
+    customers = state['customers'].select_related('salesperson')
     for customer in customers:
         salesperson_initials = customer.salesperson.initials if customer.salesperson and customer.salesperson.initials else ''
         writer.writerow([
