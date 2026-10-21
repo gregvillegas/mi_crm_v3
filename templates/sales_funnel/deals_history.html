@@ -4,6 +4,20 @@
 {% block title %}Deals History - Sales Funnel{% endblock %}
 
 {% block content %}
+<style>
+    .deals-history-card-link {
+        display: block;
+        color: inherit;
+        text-decoration: none;
+    }
+    .deals-history-card-link .card {
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .deals-history-card-link:hover .card {
+        transform: translateY(-2px);
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    }
+</style>
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2><i class="fas fa-chart-line"></i> Deals History & Statistics</h2>
     <div class="d-flex gap-2">
@@ -92,38 +106,44 @@ function exportDealsHistory() {
 
     <!-- Won Deals Card -->
     <div class="col-lg-3 col-md-6 mb-3">
-        <div class="card bg-success text-white h-100">
-            <div class="card-body">
-                <div class="d-flex justify-content-between">
-                    <div>
-                        <h6 class="card-title">Won Deals</h6>
-                        <h3 class="mb-0">{{ won_stats.count }}</h3>
-                        <small>₱{{ won_stats.total_value|floatformat:2|intcomma }}</small>
-                    </div>
-                    <div class="align-self-center">
-                        <i class="fas fa-trophy fa-2x"></i>
+        <a href="{% url 'sales_funnel:closed_deals_detail' 'won' %}{% if date_from or date_to %}?{% endif %}{% if date_from %}date_from={{ date_from }}{% endif %}{% if date_from and date_to %}&{% endif %}{% if date_to %}date_to={{ date_to }}{% endif %}" class="deals-history-card-link" aria-label="View all won deals">
+            <div class="card bg-success text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h6 class="card-title">Won Deals</h6>
+                            <h3 class="mb-0">{{ won_stats.count }}</h3>
+                            <small>₱{{ won_stats.total_value|floatformat:2|intcomma }}</small>
+                        </div>
+                        <div class="align-self-center text-end">
+                            <i class="fas fa-trophy fa-2x"></i>
+                            <div><small>View details</small></div>
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
+        </a>
     </div>
 
     <!-- Lost Deals Card -->
     <div class="col-lg-3 col-md-6 mb-3">
-        <div class="card bg-danger text-white h-100">
-            <div class="card-body">
-                <div class="d-flex justify-content-between">
-                    <div>
-                        <h6 class="card-title">Lost Deals</h6>
-                        <h3 class="mb-0">{{ lost_stats.count }}</h3>
-                        <small>₱{{ lost_stats.total_value|floatformat:2|intcomma }}</small>
-                    </div>
-                    <div class="align-self-center">
-                        <i class="fas fa-times-circle fa-2x"></i>
+        <a href="{% url 'sales_funnel:closed_deals_detail' 'lost' %}{% if date_from or date_to %}?{% endif %}{% if date_from %}date_from={{ date_from }}{% endif %}{% if date_from and date_to %}&{% endif %}{% if date_to %}date_to={{ date_to }}{% endif %}" class="deals-history-card-link" aria-label="View all lost deals">
+            <div class="card bg-danger text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h6 class="card-title">Lost Deals</h6>
+                            <h3 class="mb-0">{{ lost_stats.count }}</h3>
+                            <small>₱{{ lost_stats.total_value|floatformat:2|intcomma }}</small>
+                        </div>
+                        <div class="align-self-center text-end">
+                            <i class="fas fa-times-circle fa-2x"></i>
+                            <div><small>View details</small></div>
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
+        </a>
     </div>
 
     <!-- Won Profit Card -->

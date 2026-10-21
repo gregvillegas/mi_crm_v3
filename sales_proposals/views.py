@@ -1071,6 +1071,9 @@ def generate_pdf_buffer(proposal):
     buffer = io.BytesIO()
 
     img_width = 7.5 * inch
+    # Keep proposal line-item tables slightly inside the full artwork width so
+    # their outer grid lines visually align with the header/footer edges.
+    proposal_table_width = img_width - 6
 
     # --- Pre-calculate footer dimensions ---
     footer_img_path = os.path.join(settings.BASE_DIR, 'core/static/core/images/PROPOSAL-FOOTER.png')
@@ -1217,6 +1220,17 @@ def generate_pdf_buffer(proposal):
         safe = _html_mod.escape(trimmed).replace('\n', '<br/>')
         return f"{safe} <font size='7'><i>… (specifications truncated)</i></font>"
 
+    def _scale_widths(widths, target_width):
+        """Scale a list of ReportLab column widths to a precise target width."""
+        total_width = sum(widths)
+        if not total_width:
+            return widths
+        scale = target_width / total_width
+        scaled = [width * scale for width in widths]
+        # Absorb rounding drift in the last column so the final sum stays exact.
+        scaled[-1] += target_width - sum(scaled)
+        return scaled
+
     def draw_header_footer(canvas, doc):
         canvas.saveState()
         page_width = letter[0]
@@ -1351,6 +1365,7 @@ def generate_pdf_buffer(proposal):
         col_widths = [0.55*inch, (1.9 + 1.1)*inch, 0.5*inch, 1.05*inch, 1.3*inch, 1.1*inch]
     else:
         col_widths = [0.55*inch, 1.1*inch, 1.9*inch, 0.5*inch, 1.05*inch, 1.3*inch, 1.1*inch]
+    col_widths = _scale_widths(col_widths, proposal_table_width)
 
     if proposal.is_multi_option:
         # ===============================================================
@@ -1425,8 +1440,9 @@ def generate_pdf_buffer(proposal):
             # _pdf_description, so no single row can exceed a page (which is what
             # previously forced splitInRow / caused the LayoutError).
             gt = Table(group_table_data, colWidths=col_widths, repeatRows=2)
-            # Anchor the table to the left margin so it lines up with the body text.
-            gt.hAlign = 'LEFT'
+            # Center the slightly inset table inside the same artwork band used
+            # by the header/footer so the grid visually lines up on both sides.
+            gt.hAlign = 'CENTER'
             gt_style = [
                 # Row 0: "OPTION N" heading — spans all columns, no fill, red
                 # text, left-aligned, and NO grid lines (matches prior look).
@@ -1548,9 +1564,9 @@ def generate_pdf_buffer(proposal):
         # _pdf_description, so no single row can exceed a page (which is what
         # previously forced splitInRow / caused the LayoutError).
         t = Table(table_data, colWidths=col_widths, repeatRows=1)
-        # Anchor the table to the left margin so it lines up with the body text
-        # (default is CENTER, which pushes the left edge past the text margin).
-        t.hAlign = 'LEFT'
+        # Center the slightly inset table inside the same artwork band used by
+        # the header/footer so the grid visually lines up on both sides.
+        t.hAlign = 'CENTER'
     
         # Styling
         table_grid_end_row = -2 if not proposal.has_optional_items else -1

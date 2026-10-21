@@ -280,3 +280,111 @@ class SalesFunnelPromotionCommandTests(TestCase):
         self.assertEqual(green.stage, 'project')
         self.assertEqual(blue.stage, 'services')
         self.assertEqual(keep.stage, 'quoted')
+
+
+class SalesFunnelDealsHistoryTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username='admin_deals',
+            password='testpass123',
+            role='admin',
+            email='admin_deals@example.com',
+        )
+        self.seller_one = User.objects.create_user(
+            username='seller_one',
+            password='testpass123',
+            role='salesperson',
+            email='seller_one@example.com',
+            initials='ONE',
+        )
+        self.seller_two = User.objects.create_user(
+            username='seller_two',
+            password='testpass123',
+            role='salesperson',
+            email='seller_two@example.com',
+            initials='TWO',
+        )
+        self.customer = Customer.objects.create(
+            company_name='Deals History Corp',
+            contact_person_name='Helen Buyer',
+            email='helen@deals.test',
+            salesperson=self.seller_one,
+        )
+        self.client.force_login(self.admin)
+
+        SalesFunnel.objects.create(
+            date_created=date(2026, 10, 1),
+            company_name='Won Deal One',
+            brand='Cisco',
+            requirement_description='Network core refresh',
+            cost=Decimal('100000.00'),
+            retail=Decimal('150000.00'),
+            salesperson=self.seller_one,
+            customer=self.customer,
+            is_closed=True,
+            deal_outcome='won',
+            closed_date=date(2026, 10, 5),
+        )
+        SalesFunnel.objects.create(
+            date_created=date(2026, 10, 2),
+            company_name='Won Deal Two',
+            brand='HP',
+            requirement_description='Desktop rollout',
+            cost=Decimal('120000.00'),
+            retail=Decimal('180000.00'),
+            salesperson=self.seller_one,
+            customer=self.customer,
+            is_closed=True,
+            deal_outcome='won',
+            closed_date=date(2026, 10, 6),
+        )
+        SalesFunnel.objects.create(
+            date_created=date(2026, 10, 3),
+            company_name='Lost Deal One',
+            brand='Dell',
+            requirement_description='Server refresh',
+            cost=Decimal('90000.00'),
+            retail=Decimal('140000.00'),
+            salesperson=self.seller_one,
+            customer=self.customer,
+            is_closed=True,
+            deal_outcome='lost',
+            lost_reason='Client stayed with incumbent supplier.',
+            closed_date=date(2026, 10, 7),
+        )
+        SalesFunnel.objects.create(
+            date_created=date(2026, 10, 4),
+            company_name='Won Deal Three',
+            brand='IBM',
+            requirement_description='Storage expansion',
+            cost=Decimal('110000.00'),
+            retail=Decimal('170000.00'),
+            salesperson=self.seller_two,
+            customer=self.customer,
+            is_closed=True,
+            deal_outcome='won',
+            closed_date=date(2026, 10, 8),
+        )
+
+    def test_deals_history_uses_overall_win_rate_not_last_salesperson_rate(self):
+        response = self.client.get(reverse('sales_funnel:deals_history'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertAlmostEqual(response.context['win_rate'], 75.0)
+        self.assertContains(response, '75.0%')
+
+    def test_deals_history_cards_link_to_outcome_detail_pages(self):
+        response = self.client.get(reverse('sales_funnel:deals_history'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse('sales_funnel:closed_deals_detail', args=['won']))
+        self.assertContains(response, reverse('sales_funnel:closed_deals_detail', args=['lost']))
+
+    def test_lost_deals_detail_page_shows_reason_column_and_only_lost_entries(self):
+        response = self.client.get(reverse('sales_funnel:closed_deals_detail', args=['lost']))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '>Reason<', html=False)
+        self.assertContains(response, 'Lost Deal One')
+        self.assertContains(response, 'Client stayed with incumbent supplier.')
+        self.assertNotContains(response, 'Won Deal One')

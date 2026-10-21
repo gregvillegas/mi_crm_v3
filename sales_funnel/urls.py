@@ -30,6 +30,7 @@ urlpatterns = [
     # History and statistics
     path('deals-history/', views.deals_history, name='deals_history'),
     path('deals-history/export/', views.export_deals_history, name='export_deals_history'),
+    path('deals-history/<str:outcome>/', views.closed_deals_detail, name='closed_deals_detail'),
     # Maintenance
     path('clear-stage/', views.clear_stage_entries, name='clear_stage'),
 ]

@@ -1163,6 +1163,22 @@ def _closed_deals_for_user(user):
     return SalesFunnel.objects.filter(is_closed=True)
 
 
+def _apply_closed_deals_filters(queryset, params, forced_outcome=''):
+    """Apply the shared date/outcome filters used by deals history pages."""
+    date_from = params.get('date_from')
+    date_to = params.get('date_to')
+    outcome = (forced_outcome or params.get('outcome', '')).strip().lower()
+
+    if date_from:
+        queryset = queryset.filter(closed_date__gte=date_from)
+    if date_to:
+        queryset = queryset.filter(closed_date__lte=date_to)
+    if outcome in ('won', 'lost'):
+        queryset = queryset.filter(deal_outcome=outcome)
+
+    return queryset, date_from, date_to, outcome
+
+
 def _salesperson_initials(sp):
     """3-letter-ish initials for a salesperson, matching the UI badge logic."""
     if not sp:
@@ -1191,22 +1207,13 @@ def export_deals_history(request):
     from io import BytesIO
 
     user = request.user
-    closed_deals = _closed_deals_for_user(user).select_related('salesperson')
-
-    outcome = request.GET.get('outcome', '').strip().lower()
-    date_from = request.GET.get('date_from')
-    date_to = request.GET.get('date_to')
-    if date_from:
-        closed_deals = closed_deals.filter(closed_date__gte=date_from)
-    if date_to:
-        closed_deals = closed_deals.filter(closed_date__lte=date_to)
+    closed_deals, _, _, outcome = _apply_closed_deals_filters(
+        _closed_deals_for_user(user).select_related('salesperson'),
+        request.GET,
+    )
 
     won_qs = closed_deals.filter(deal_outcome='won').order_by('-closed_date')
     lost_qs = closed_deals.filter(deal_outcome='lost').order_by('-closed_date')
-    if outcome == 'won':
-        lost_qs = lost_qs.none()
-    elif outcome == 'lost':
-        won_qs = won_qs.none()
 
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
@@ -1292,30 +1299,16 @@ def export_deals_history(request):
 def deals_history(request):
     """View to show comprehensive won/lost deal statistics"""
     user = request.user
-    outcome = request.GET.get('outcome', '').strip().lower()
 
     # Role-scoped closed deals (shared with the Excel export).
-    closed_deals = _closed_deals_for_user(user)
-    
-    # Apply date filters if provided
-    date_from = request.GET.get('date_from')
-    date_to = request.GET.get('date_to')
-    
-    if date_from:
-        closed_deals = closed_deals.filter(closed_date__gte=date_from)
-    if date_to:
-        closed_deals = closed_deals.filter(closed_date__lte=date_to)
+    closed_deals, date_from, date_to, outcome = _apply_closed_deals_filters(
+        _closed_deals_for_user(user),
+        request.GET,
+    )
     
     # Separate won and lost deals
     won_deals = closed_deals.filter(deal_outcome='won').select_related('salesperson', 'customer')
     lost_deals = closed_deals.filter(deal_outcome='lost').select_related('salesperson', 'customer')
-    
-    if outcome == 'won':
-        won_deals = won_deals
-        lost_deals = lost_deals.none()
-    elif outcome == 'lost':
-        lost_deals = lost_deals
-        won_deals = won_deals.none()
     
     # Calculate overall statistics
     won_stats = {
@@ -1340,7 +1333,7 @@ def deals_history(request):
     
     # Calculate win rate and averages
     total_closed = won_stats['count'] + lost_stats['count']
-    win_rate = (won_stats['count'] / total_closed * 100) if total_closed > 0 else 0
+    overall_win_rate = (won_stats['count'] / total_closed * 100) if total_closed > 0 else 0
     
     # Calculate average values
     total_value_all = won_stats['total_value'] + lost_stats['total_value']
@@ -1366,9 +1359,9 @@ def deals_history(request):
         top_salespeople = []
         for sp in salespeople_stats:
             total_deals = sp['won_count'] + sp['lost_count']
-            win_rate = (sp['won_count'] / total_deals * 100) if total_deals > 0 else 0
+            salesperson_win_rate = (sp['won_count'] / total_deals * 100) if total_deals > 0 else 0
             sp['total_deals'] = total_deals
-            sp['win_rate'] = win_rate
+            sp['win_rate'] = salesperson_win_rate
             sp['total_won_value'] = sp['total_won_value'] or 0
             sp['total_lost_value'] = sp['total_lost_value'] or 0
             top_salespeople.append(sp)
@@ -1380,7 +1373,7 @@ def deals_history(request):
     context = {
         'won_stats': won_stats,
         'lost_stats': lost_stats,
-        'win_rate': win_rate,
+        'win_rate': overall_win_rate,
         'total_closed': total_closed,
         'recent_won': recent_won,
         'recent_lost': recent_lost,
@@ -1394,6 +1387,41 @@ def deals_history(request):
     }
     
     return render(request, 'sales_funnel/deals_history.html', context)
+
+
+@login_required
+@user_passes_test(can_access_funnel)
+def closed_deals_detail(request, outcome):
+    """Detailed list of all closed deals for a single outcome (won or lost)."""
+    outcome = (outcome or '').strip().lower()
+    if outcome not in ('won', 'lost'):
+        messages.error(request, 'Unknown deal outcome.')
+        return redirect('sales_funnel:deals_history')
+
+    deals, date_from, date_to, _ = _apply_closed_deals_filters(
+        _closed_deals_for_user(request.user).select_related('salesperson', 'customer', 'proposal'),
+        request.GET,
+        forced_outcome=outcome,
+    )
+    deals = deals.order_by('-closed_date', '-updated_at')
+
+    summary = {
+        'count': deals.count(),
+        'total_value': sum((deal.display_retail for deal in deals), Decimal('0.00')),
+        'total_profit': sum((deal.profit for deal in deals), Decimal('0.00')),
+    }
+
+    context = {
+        'deals': deals,
+        'deal_outcome': outcome,
+        'page_title': 'Won Deals' if outcome == 'won' else 'Lost Deals',
+        'header_icon': 'fa-trophy' if outcome == 'won' else 'fa-times-circle',
+        'theme_class': 'success' if outcome == 'won' else 'danger',
+        'date_from': date_from,
+        'date_to': date_to,
+        'summary': summary,
+    }
+    return render(request, 'sales_funnel/closed_deals_detail.html', context)
 
 
 @login_required

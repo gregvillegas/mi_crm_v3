@@ -29,8 +29,12 @@
   // Ensure trailing slash is stripped from appUrl
   config.appUrl = config.appUrl.replace(/\/+$/, '');
 
-  // 1. Inject Stylesheet if not already linked
-  const cssHref = `${config.appUrl}/static/assistant/css/miiciq-widget.css`;
+  // 1. Inject the stylesheet that lives beside this widget script.
+  // This keeps CRM-side style changes effective even when the MIICiQ app URL is remote.
+  let cssHref = `${window.location.origin}/static/core/css/miiciq-widget.css`;
+  if (currentScript && currentScript.src) {
+    cssHref = currentScript.src.replace(/\/js\/miiciq-widget\.js(?:\?.*)?$/, '/css/miiciq-widget.css');
+  }
   if (!document.querySelector(`link[href*="miiciq-widget.css"]`)) {
     const link = document.createElement('link');
     link.rel = 'stylesheet';
