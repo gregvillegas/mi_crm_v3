@@ -1190,5 +1190,6 @@
 
     <script src="{% static 'core/js/about-modal.js' %}"></script>
     {% block extra_js %}{% endblock %}
+    {% include "includes/miiciq_widget.html" with miiciq_url="http://localhost:8000" mode="new_tab" %}
 </body>
 </html>
