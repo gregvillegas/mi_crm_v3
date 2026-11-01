@@ -67,6 +67,24 @@
                             </label>
                         </div>
                     </div>
+
+                    <div class="mb-3 border rounded p-3 bg-light" id="tsOptions" style="display:none;">
+                        <h6 class="mb-2"><i class="fas fa-screwdriver-wrench me-1"></i>Technical Sales options</h6>
+                        <div class="form-check">
+                            <input type="checkbox" class="form-check-input" id="handles_all_technical_teams" name="handles_all_technical_teams">
+                            <label class="form-check-label" for="handles_all_technical_teams">
+                                Handles all technical teams
+                                <small class="d-block text-muted">Use when there is only one Technical Salesperson covering every team.</small>
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input type="checkbox" class="form-check-input" id="ts_approval_exempt" name="ts_approval_exempt">
+                            <label class="form-check-label" for="ts_approval_exempt">
+                                Mastered — proposals do not require Technical Manager approval
+                                <small class="d-block text-muted">Once mastered, this person's proposals skip the approval step.</small>
+                            </label>
+                        </div>
+                    </div>
                     
                     <div class="d-flex gap-2">
                         <button type="submit" class="btn btn-primary">Create User</button>
@@ -77,4 +95,14 @@
         </div>
     </div>
 </div>
+<script>
+(function () {
+    var role = document.getElementById('role');
+    var box = document.getElementById('tsOptions');
+    if (!role || !box) return;
+    function sync() { box.style.display = (role.value === 'technical_sales') ? '' : 'none'; }
+    role.addEventListener('change', sync);
+    sync();
+})();
+</script>
 {% endblock %}

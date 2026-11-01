@@ -16,7 +16,7 @@ class SalesFunnelForm(forms.ModelForm):
         fields = [
             'date_created', 'company_name', 'brand', 'requirement_description',
             'cost', 'retail', 'stage', 'customer', 'expected_close_date',
-            'probability', 'notes'
+            'probability', 'notes', 'offering_type'
         ]
         widgets = {
             'date_created': forms.DateInput(attrs={
@@ -81,6 +81,14 @@ class SalesFunnelForm(forms.ModelForm):
                 self.fields['customer'].queryset = Customer.objects.filter(
                     salesperson=user, is_active=True
                 ).order_by('company_name')
+            elif user.role in ['technical_sales', 'techmgr', 'asst_techmgr']:
+                # Technical Sales / Technical Manager are scoped to the customers
+                # of the team(s) they cover — reuse the shared customer-visibility
+                # helper so the funnel picker matches the rest of the app.
+                from customers.permissions import visible_customers_queryset
+                self.fields['customer'].queryset = visible_customers_queryset(user).filter(
+                    is_active=True
+                ).order_by('company_name')
             elif user.role in ['supervisor', 'teamlead', 'asm', 'avp']:
                 # Managers can see customers in their scope
                 # For now, show all active customers - this can be refined based on hierarchy
@@ -100,6 +108,8 @@ class SalesFunnelForm(forms.ModelForm):
         self.fields['cost'].label = "Cost (₱)"
         self.fields['retail'].label = "SRP (₱)"
         self.fields['probability'].label = "Win Probability (%)"
+        if 'offering_type' in self.fields:
+            self.fields['offering_type'].label = "Technical offering (optional)"
         if self.instance.pk and self.instance.probability is not None:
             existing = int(self.instance.probability)
             existing_values = {int(v) for v, _ in self.fields['probability'].choices}
@@ -125,7 +135,15 @@ class SalesFunnelForm(forms.ModelForm):
         return cleaned_data
 
 
-from teams.models import Team, Group, TeamMembership, asm_scoped_groups
+from teams.models import (
+    Team,
+    Group,
+    TeamMembership,
+    asm_scoped_groups,
+    tech_manager_team_ids,
+    technical_sales_team_ids,
+    technical_sales_users_for_teams,
+)
 
 
 class FunnelFilterForm(forms.Form):
@@ -186,41 +204,60 @@ class FunnelFilterForm(forms.Form):
         super().__init__(*args, **kwargs)
         qs = User.objects.filter(role='salesperson', is_active=True)
         group_qs = Group.objects.none()
+        team_qs = Team.objects.none()
         if user:
             if user.role == 'salesperson':
                 qs = User.objects.filter(id=user.id)
+                try:
+                    team_qs = Team.objects.filter(id=user.team_membership.group.team_id)
+                except Exception:
+                    team_qs = Team.objects.none()
             elif user.role == 'supervisor':
                 groups = Group.objects.filter(supervisor=user)
                 group_qs = groups
                 salespeople_ids = TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True)
                 qs = User.objects.filter(id__in=salespeople_ids)
+                team_qs = Team.objects.filter(id__in=groups.values_list('team_id', flat=True).distinct())
             elif user.role == 'teamlead':
                 teamlead_groups = Group.objects.filter(teamlead=user)
                 group_qs = teamlead_groups
                 salespeople_ids = TeamMembership.objects.filter(group__in=teamlead_groups).values_list('user_id', flat=True)
                 qs = User.objects.filter(id__in=salespeople_ids)
+                team_qs = Team.objects.filter(id__in=teamlead_groups.values_list('team_id', flat=True).distinct())
             elif user.role == 'asm':
                 # ASM: scope the Group/Salesperson filter to the groups they handle.
                 groups = asm_scoped_groups(user)
                 group_qs = groups
                 salespeople_ids = TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True)
                 qs = User.objects.filter(id__in=salespeople_ids)
+                team_qs = Team.objects.filter(id__in=groups.values_list('team_id', flat=True).distinct())
             elif user.role == 'sm':
                 groups = user.sm_groups.all()
                 group_qs = groups
                 salespeople_ids = TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True)
                 qs = User.objects.filter(id__in=salespeople_ids)
+                team_qs = Team.objects.filter(id__in=groups.values_list('team_id', flat=True).distinct())
             elif user.role == 'avp':
                 teams = Team.objects.filter(avp=user)
                 groups = Group.objects.filter(team__in=teams)
                 group_qs = groups
                 salespeople_ids = TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True)
                 qs = User.objects.filter(id__in=salespeople_ids)
+                team_qs = teams
+            elif user.role == 'technical_sales':
+                qs = User.objects.filter(id=user.id)
+                team_qs = Team.objects.filter(id__in=technical_sales_team_ids(user)).order_by('name')
+            elif user.role in ['techmgr', 'asst_techmgr']:
+                team_ids = tech_manager_team_ids(user)
+                qs = technical_sales_users_for_teams(team_ids)
+                team_qs = Team.objects.filter(id__in=team_ids).order_by('name')
             else:
                 qs = User.objects.filter(role='salesperson', is_active=True)
                 group_qs = Group.objects.all()
+                team_qs = Team.objects.all()
         else:
             group_qs = Group.objects.all()
+            team_qs = Team.objects.all()
 
         selected_group_id = None
         if self.is_bound:
@@ -240,12 +277,16 @@ class FunnelFilterForm(forms.Form):
         self.fields['salesperson'].queryset = qs.order_by('first_name', 'last_name')
         self.fields['salesperson'].empty_label = '-- All Salespeople --'
 
-        # Team filter queryset — derived from visible groups
-        if group_qs.exists():
+        # Team filter queryset — derived from visible groups unless explicitly
+        # provided above for roles that are scoped by teams rather than groups
+        # (Technical Sales / Technical Manager).
+        if team_qs.exists():
+            self.fields['team'].queryset = team_qs.distinct().order_by('name')
+        elif group_qs.exists():
             team_ids = group_qs.values_list('team_id', flat=True).distinct()
             self.fields['team'].queryset = Team.objects.filter(id__in=team_ids).order_by('name')
         else:
-            self.fields['team'].queryset = Team.objects.all().order_by('name')
+            self.fields['team'].queryset = Team.objects.none()
         self.fields['team'].empty_label = '-- All Teams --'
 
 

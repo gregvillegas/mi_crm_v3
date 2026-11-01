@@ -699,7 +699,7 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto mb-2 mb-lg-0 align-items-center">
                     {% if user.is_authenticated %}
-                      {% if user.role in 'avp,admin,president,gm,vp,salesperson,supervisor,teamlead,asm,marketing' %}
+                      {% if user.role in 'avp,admin,president,gm,vp,salesperson,supervisor,teamlead,asm,marketing,technical_sales,techmgr,asst_techmgr' %}
                        <li class="nav-item">
                            <a class="nav-link" href="{% url 'customer_list' %}" title="Customers">
                                <i class="fas fa-users"></i><span>Customers</span>
@@ -737,7 +737,7 @@
                                 </ul>
                             </li>
                         {% endif %}
-                        {% if user.role in 'salesperson,supervisor,teamlead,asm,avp,admin,president,gm,vp' %}
+                        {% if user.role in 'salesperson,supervisor,teamlead,asm,avp,admin,president,gm,vp,technical_sales,techmgr,asst_techmgr' %}
                             <li class="nav-item dropdown">
                                 <a class="nav-link dropdown-toggle" href="#" id="salesFunnelDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false" title="Sales Funnel">
                                     <i class="fas fa-filter"></i><span>Funnel</span>
@@ -766,7 +766,7 @@
                                 </a>
                             </li>
                         {% endif %}
-                        {% if user.role in 'salesperson,avp,supervisor,teamlead,asm,admin,president,gm,vp' %}
+                        {% if user.role in 'salesperson,avp,supervisor,teamlead,asm,admin,president,gm,vp,technical_sales,techmgr,asst_techmgr' %}
                             <li class="nav-item dropdown">
                                 <a class="nav-link dropdown-toggle" href="#" id="salesMonitoringDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false" title="Monitoring">
                                     <i class="fas fa-desktop"></i><span>Monitoring</span>
@@ -785,6 +785,7 @@
 				    {% if user.role in 'supervisor,teamlead,asm,avp,admin,president,gm,vp' %}
                                     <li><a class="dropdown-item" href="{% url 'sales_monitoring:activity_reports' %}"><i class="fas fa-clipboard-list me-2"></i>Reports</a></li>
 				    {% endif %}
+                                    <li><a class="dropdown-item" href="{% url 'warehouse:dashboard' %}"><i class="fas fa-truck-fast me-2"></i>Warehouse Deliveries</a></li>
                                 </ul>
                             </li>
                         {% endif %}
@@ -822,7 +823,7 @@
                             </a>
                         </li>
                         {% endif %}
-                        {% if user.role in 'admin,president,gm,vp,avp,asm' %}
+                        {% if user.role in 'admin,president,gm,vp,avp,asm,techmgr,asst_techmgr' %}
                             <li class="nav-item dropdown">
                                 <a class="nav-link dropdown-toggle" href="#" id="teamsDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false" title="Teams">
                                     <i class="fas fa-sitemap"></i><span>Teams</span>
@@ -1065,16 +1066,16 @@
 
     <!-- Thumb-zone bottom tab bar (mobile only). Mirrors real nav destinations. -->
     <nav class="m-tabbar" id="mTabbar" aria-label="Primary">
-        {% if user.role in 'avp,admin,president,gm,vp,salesperson,supervisor,teamlead,asm,marketing' %}
+        {% if user.role in 'avp,admin,president,gm,vp,salesperson,supervisor,teamlead,asm,marketing,technical_sales,techmgr,asst_techmgr' %}
         <a class="m-tabbar__item" href="{% url 'customer_list' %}"><i class="fas fa-users"></i><span>Customers</span></a>
         {% endif %}
-        {% if user.role in 'salesperson,supervisor,teamlead,asm,avp,admin,president,gm,vp' %}
+        {% if user.role in 'salesperson,supervisor,teamlead,asm,avp,admin,president,gm,vp,technical_sales,techmgr,asst_techmgr' %}
         <a class="m-tabbar__item" href="{% url 'sales_funnel:dashboard' %}"><i class="fas fa-filter"></i><span>Funnel</span></a>
         {% endif %}
-        {% if user.role in 'salesperson,supervisor,teamlead,asm,avp,admin,president,gm,vp' %}
+        {% if user.role in 'salesperson,supervisor,teamlead,asm,avp,admin,president,gm,vp,technical_sales,techmgr,asst_techmgr' %}
         <a class="m-tabbar__item" href="{% url 'proposal_list' %}"><i class="fas fa-file-invoice-dollar"></i><span>Proposals</span></a>
         {% endif %}
-        {% if user.role in 'salesperson,avp,supervisor,teamlead,asm,admin,president,gm,vp' %}
+        {% if user.role in 'salesperson,avp,supervisor,teamlead,asm,admin,president,gm,vp,technical_sales,techmgr,asst_techmgr' %}
         <a class="m-tabbar__item" href="{% url 'sales_monitoring:dashboard' %}"><i class="fas fa-desktop"></i><span>Monitor</span></a>
         {% endif %}
         <a class="m-tabbar__item" href="{% url 'profile' %}"><i class="fas fa-user-circle"></i><span>Me</span></a>

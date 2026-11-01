@@ -7,7 +7,7 @@ from crispy_forms.layout import Layout, Row, Column, Submit, HTML, Field
 class TeamForm(forms.ModelForm):
     class Meta:
         model = Team
-        fields = ['name', 'avp', 'asm', 'tech_manager']
+        fields = ['name', 'avp', 'asm', 'tech_manager', 'technical_sales']
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -17,6 +17,19 @@ class TeamForm(forms.ModelForm):
         self.fields['avp'].required = False
         self.fields['asm'].required = False
         self.fields['tech_manager'].required = False
+        # Technical Sales staff who handle this team's customers. A single person
+        # can be attached to more than one team (1-person setup), or two people
+        # can be split across Team A / Team B (2-person setup).
+        # Set the widget BEFORE the queryset (queryset assignment re-binds choices).
+        self.fields['technical_sales'].widget = forms.CheckboxSelectMultiple()
+        self.fields['technical_sales'].queryset = User.objects.filter(
+            role='technical_sales', is_active=True
+        ).order_by('first_name', 'last_name')
+        self.fields['technical_sales'].required = False
+        self.fields['technical_sales'].help_text = (
+            'Attach the Technical Salesperson(s) who handle this team. '
+            'A single person may be attached to more than one team.'
+        )
         
         self.helper = FormHelper()
         self.helper.layout = Layout(
@@ -28,6 +41,8 @@ class TeamForm(forms.ModelForm):
             Row(
                 Column('tech_manager', css_class='form-group col-md-6 mb-3'),
             ),
+            HTML('<h6 class="mt-2">Technical Sales Assignment</h6>'),
+            Field('technical_sales', css_class='form-check-input'),
             HTML('<br>'),
             Submit('submit', 'Save Team', css_class='btn btn-primary')
         )

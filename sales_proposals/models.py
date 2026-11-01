@@ -173,6 +173,23 @@ class Proposal(models.Model):
         help_text="Marks a test/scratch proposal. Its funnel entry becomes deletable."
     )
 
+    # Technical Sales offering classification (what this proposal sells).
+    OFFERING_TYPE_CHOICES = [
+        ('', '---------'),
+        ('parts', 'Parts Sales'),
+        ('services', 'Services'),
+        ('repair', 'Repair'),
+        ('inhouse_support', 'In-house Support'),
+        ('remote_support', 'Remote Support'),
+    ]
+    offering_type = models.CharField(
+        max_length=20,
+        choices=OFFERING_TYPE_CHOICES,
+        blank=True,
+        default='',
+        help_text="Optional classification for Technical Sales proposals (parts, services, repair, support)."
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -262,7 +279,20 @@ class Proposal(models.Model):
             rate = self.exchange_rate if self.exchange_rate > 0 else Decimal('1.0')
             php_total = self.total_amount * rate
         self.approval_total_php = php_total
-        need = php_total >= Decimal('500000')
+        # Approval rule:
+        #  - Technical Sales proposals ALWAYS require approval (the Technical
+        #    Manager/Assistant verifies correctness) UNLESS the author has been
+        #    flagged as "mastered" (ts_approval_exempt).
+        #  - AVP and above do not require approval; they are already the final
+        #    approval authority for their org slice.
+        #  - Everyone else keeps the price-based threshold rule.
+        creator_role = getattr(self.created_by, 'role', None)
+        if creator_role == 'technical_sales':
+            need = not getattr(self.created_by, 'ts_approval_exempt', False)
+        elif creator_role in {'avp', 'vp', 'gm', 'president', 'admin'}:
+            need = False
+        else:
+            need = php_total >= Decimal('500000')
         self.approval_required = need
         if need and self.approval_status in ['not_required', 'approved', 'rejected']:
             self.approval_status = 'pending'
@@ -344,6 +374,28 @@ class Proposal(models.Model):
         chain = []
         php_total = self.approval_total_php or 0
         creator = self.created_by
+
+        # Technical Sales proposals are approved by the Technical Manager /
+        # Assistant Technical Manager of the team(s) the author handles.
+        # Price tiers are intentionally bypassed for these authors: approval is
+        # driven purely by calculate_totals() (always required unless the author
+        # is flagged as "mastered").
+        if getattr(creator, 'role', None) == 'technical_sales':
+            try:
+                from teams.models import technical_sales_team_ids
+                team_ids = technical_sales_team_ids(creator)
+                if not team_ids:
+                    return []
+                managers = list(
+                    User.objects
+                    .filter(role__in=['techmgr', 'asst_techmgr'], tsg_managed_teams__id__in=list(team_ids))
+                    .exclude(id=creator.id)
+                    .distinct()
+                )
+            except Exception:
+                managers = []
+            return managers
+
         group = None
         # 1. Try standard TeamMembership (works for salespeople)
         try:
@@ -407,8 +459,11 @@ class Proposal(models.Model):
         # Higher number = higher authority.
         ROLE_LEVEL = {
             'salesperson': 1,
+            'technical_sales': 1,
             'teamlead': 2,
             'supervisor': 3,
+            'techmgr': 3,
+            'asst_techmgr': 3,
             'asm': 4,
             'sm': 4,
             'avp': 5,
@@ -445,10 +500,15 @@ class Proposal(models.Model):
                 if avp_or_gm and avp_or_gm != creator and avp_or_gm not in chain and _approver_outranks_creator(avp_or_gm):
                     chain.append(avp_or_gm)
 
-        # Escalation: if approval is required but all lower-tier approvers were skipped
-        # (creator outranks them), escalate to the next higher authority.
+        # Escalation: if approval is required but the tier-selected approvers were
+        # all skipped because the creator already occupies that level, substitute
+        # exactly ONE level up the hierarchy. Example: a supervisor-authored <1M
+        # proposal using a "supervisor" tier goes to the group's SM/ASM when that
+        # group has SM approval enabled, and straight to AVP/GM when it does not.
         if not chain and self.approval_required:
-            if avp_or_gm and avp_or_gm != creator and _approver_outranks_creator(avp_or_gm):
+            if asm and asm != creator and _approver_outranks_creator(asm):
+                chain.append(asm)
+            elif avp_or_gm and avp_or_gm != creator and _approver_outranks_creator(avp_or_gm):
                 chain.append(avp_or_gm)
 
         return [u for u in chain if u]

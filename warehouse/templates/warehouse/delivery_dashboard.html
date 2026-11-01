@@ -1,0 +1,388 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<style>
+    /* Section header colours mirror the Excel colour coding. */
+    .card-header.section-purple { background-color: #7030A0; color: #fff; font-weight: 600; }
+    .card-header.section-yellow { background-color: #FFC000; color: #3b2f00; font-weight: 600; }
+    .card-header.section-green  { background-color: #28A745; color: #fff; font-weight: 600; }
+
+    /* Pending / failed deliveries flag their remarks in bold red. */
+    .remarks-urgent { color: #dc3545; font-weight: 700; }
+
+    .delivery-table td { transition: background-color 1.2s ease-out; }
+    /* Brief highlight when a row arrives or moves between sections. */
+    .delivery-table tr.row-flash td { background-color: #d4f8d4 !important; }
+
+    .van-details { background-color: #fffbe6; }
+</style>
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <h2 class="mb-0"><i class="fas fa-truck-fast"></i> Warehouse Deliveries</h2>
+    <div class="d-flex align-items-center flex-wrap gap-2">
+        <span id="live-indicator" class="badge bg-secondary">Connecting…</span>
+        <form method="get" class="d-flex align-items-center gap-2 mb-0">
+            <input type="date" name="date" value="{{ selected_date|date:'Y-m-d' }}"
+                   class="form-control form-control-sm" aria-label="Delivery date">
+            <button class="btn btn-sm btn-outline-secondary" type="submit">Go</button>
+        </form>
+        <a href="{% url 'warehouse:export' %}?date={{ selected_date|date:'Y-m-d' }}"
+           class="btn btn-sm btn-success">
+            <i class="fas fa-file-excel"></i> Export Excel
+        </a>
+    </div>
+</div>
+
+{# ---------------- Section 1: FOR SCHEDULE ---------------- #}
+<div class="card mb-4">
+    <div class="card-header section-purple d-flex justify-content-between align-items-center">
+        <span><i class="fas fa-hourglass-half me-1"></i> FOR SCHEDULE</span>
+        <span class="badge bg-light text-dark" data-count-for="FOR_SCHEDULE">
+            {{ for_schedule|length }} item(s)
+        </span>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle delivery-table mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>S.O. / SRF# / POR#</th>
+                    <th>CLIENT</th>
+                    <th>ITEM / PARTICULAR</th>
+                    <th>AREA</th>
+                    <th>DRIVER / STAFF</th>
+                    <th>VEHICLE PLATE</th>
+                    <th class="text-center">AE</th>
+                    <th>REMARKS</th>
+                </tr>
+            </thead>
+            <tbody id="tbody-for-schedule">
+                {% for d in for_schedule %}
+                    {% include 'warehouse/_delivery_row.html' %}
+                {% empty %}
+                    <tr class="empty-row">
+                        <td colspan="8" class="text-center text-muted py-3">No records</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{# ---------------- Section 2: SCHEDULED DELIVERY ---------------- #}
+<div class="card mb-4">
+    <div class="card-header section-yellow d-flex justify-content-between align-items-center">
+        <span>
+            <i class="fas fa-clipboard-check me-1"></i> SCHEDULED DELIVERY
+            <span class="fw-normal ms-2">{{ selected_date|date:"F d, Y" }}</span>
+        </span>
+        <span class="badge bg-light text-dark" data-count-for="SCHEDULED">
+            {{ scheduled|length }} item(s)
+        </span>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle delivery-table mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>S.O. / SRF# / POR#</th>
+                    <th>CLIENT</th>
+                    <th>ITEM / PARTICULAR</th>
+                    <th>AREA</th>
+                    <th>DRIVER / STAFF</th>
+                    <th>VEHICLE PLATE</th>
+                    <th class="text-center">AE</th>
+                    <th>REMARKS</th>
+                </tr>
+            </thead>
+            <tbody id="tbody-scheduled">
+                {% for d in scheduled %}
+                    {% include 'warehouse/_delivery_row.html' %}
+                {% empty %}
+                    <tr class="empty-row">
+                        <td colspan="8" class="text-center text-muted py-3">No records</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="card-footer van-details">
+        <div class="fw-bold mb-2"><i class="fas fa-truck me-1"></i> VAN DETAILS</div>
+        <div class="table-responsive">
+            <table class="table table-sm table-borderless mb-0">
+                <thead>
+                    <tr class="text-muted small">
+                        <th>VEHICLE PLATE</th>
+                        <th>DRIVER / STAFF</th>
+                        <th class="text-end">ITEMS</th>
+                        <th>SO NUMBERS</th>
+                    </tr>
+                </thead>
+                <tbody id="van-details-body">
+                    {% for van in van_details %}
+                        <tr data-plate="{{ van.vehicle_plate }}" data-driver="{{ van.driver_staff }}">
+                            <td class="fw-semibold">{{ van.vehicle_plate|default:'—' }}</td>
+                            <td>{{ van.driver_staff|default:'—' }}</td>
+                            <td class="text-end">{{ van.count }}</td>
+                            <td class="text-muted small">{{ van.so_numbers|join:', ' }}</td>
+                        </tr>
+                    {% empty %}
+                        <tr class="empty-row">
+                            <td colspan="4" class="text-muted">No vehicles assigned yet.</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{# ---------------- Section 3: ACCOMPLISHED DELIVERY ---------------- #}
+<div class="card mb-4">
+    <div class="card-header section-green d-flex justify-content-between align-items-center">
+        <span>
+            <i class="fas fa-circle-check me-1"></i> ACCOMPLISHED DELIVERY
+            <span class="fw-normal ms-2">{{ accomplished_date|date:"F d, Y" }}</span>
+        </span>
+        <span class="badge bg-light text-dark" data-count-for="ACCOMPLISHED">
+            {{ accomplished|length }} item(s)
+        </span>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle delivery-table mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>S.O. / SRF# / POR#</th>
+                    <th>CLIENT</th>
+                    <th>ITEM / PARTICULAR</th>
+                    <th>AREA</th>
+                    <th>DRIVER / STAFF</th>
+                    <th>VEHICLE PLATE</th>
+                    <th class="text-center">AE</th>
+                    <th>REMARKS</th>
+                </tr>
+            </thead>
+            <tbody id="tbody-accomplished">
+                {% for d in accomplished %}
+                    {% include 'warehouse/_delivery_row.html' %}
+                {% empty %}
+                    <tr class="empty-row">
+                        <td colspan="8" class="text-center text-muted py-3">No records</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    'use strict';
+
+    // WebSocket endpoint registered in warehouse/routing.py
+    var WS_PATH = '/ws/warehouse/deliveries/';
+
+    var SECTION_TBODY = {
+        FOR_SCHEDULE: 'tbody-for-schedule',
+        SCHEDULED: 'tbody-scheduled',
+        ACCOMPLISHED: 'tbody-accomplished'
+    };
+    var COLUMN_COUNT = 8;
+    var RECONNECT_MS = 3000;
+    var FLASH_MS = 1500;
+
+    function tbodyFor(status) {
+        var id = SECTION_TBODY[status];
+        return id ? document.getElementById(id) : null;
+    }
+
+    function makeCell(text, className) {
+        var td = document.createElement('td');
+        td.textContent = text || '';
+        if (className) { td.className = className; }
+        return td;
+    }
+
+    function buildRow(d) {
+        var tr = document.createElement('tr');
+        tr.dataset.deliveryId = d.id;
+        tr.dataset.so = d.so_number;
+        tr.dataset.plate = d.vehicle_plate || '';
+        tr.dataset.driver = d.driver_staff || '';
+        tr.dataset.status = d.status;
+
+        tr.appendChild(makeCell(d.so_number, 'fw-semibold text-nowrap'));
+        tr.appendChild(makeCell(d.client));
+        tr.appendChild(makeCell(d.item));
+        tr.appendChild(makeCell(d.area));
+        tr.appendChild(makeCell(d.driver_staff));
+        tr.appendChild(makeCell(d.vehicle_plate, 'text-nowrap'));
+        tr.appendChild(makeCell(d.ae, 'text-center text-nowrap'));
+
+        // Remarks stay bold red while the delivery is still FOR SCHEDULE.
+        var remarks = document.createElement('td');
+        if (d.status === 'FOR_SCHEDULE' && d.remarks) {
+            var span = document.createElement('span');
+            span.className = 'remarks-urgent';
+            span.textContent = d.remarks;
+            remarks.appendChild(span);
+        } else {
+            remarks.textContent = d.remarks || '';
+        }
+        tr.appendChild(remarks);
+
+        return tr;
+    }
+
+    function removeRow(id) {
+        var rows = document.querySelectorAll('tr[data-delivery-id="' + id + '"]');
+        Array.prototype.forEach.call(rows, function (tr) { tr.remove(); });
+    }
+
+    function ensureEmptyRow(tbody) {
+        if (!tbody) { return; }
+        var hasRows = tbody.querySelector('tr[data-delivery-id]');
+        var placeholder = tbody.querySelector('tr.empty-row');
+
+        if (hasRows) {
+            if (placeholder) { placeholder.remove(); }
+            return;
+        }
+        if (!placeholder) {
+            placeholder = document.createElement('tr');
+            placeholder.className = 'empty-row';
+            var td = document.createElement('td');
+            td.colSpan = COLUMN_COUNT;
+            td.className = 'text-center text-muted py-3';
+            td.textContent = 'No records';
+            placeholder.appendChild(td);
+            tbody.appendChild(placeholder);
+        }
+    }
+
+    function refreshCounts() {
+        Object.keys(SECTION_TBODY).forEach(function (status) {
+            var tbody = tbodyFor(status);
+            var badge = document.querySelector('[data-count-for="' + status + '"]');
+            if (!tbody || !badge) { return; }
+            badge.textContent =
+                tbody.querySelectorAll('tr[data-delivery-id]').length + ' item(s)';
+        });
+    }
+
+    // Rebuild the VAN DETAILS footer from whatever is currently in the
+    // Scheduled table, grouped by vehicle plate + driver.
+    function refreshVanDetails() {
+        var tbody = document.getElementById('tbody-scheduled');
+        var body = document.getElementById('van-details-body');
+        if (!tbody || !body) { return; }
+
+        var grouped = {};
+        Array.prototype.forEach.call(
+            tbody.querySelectorAll('tr[data-delivery-id]'),
+            function (tr) {
+                var plate = (tr.dataset.plate || '').trim();
+                var driver = (tr.dataset.driver || '').trim();
+                if (!plate && !driver) { return; }
+                var key = plate + '||' + driver;
+                if (!grouped[key]) {
+                    grouped[key] = { plate: plate, driver: driver, count: 0, so: [] };
+                }
+                grouped[key].count += 1;
+                grouped[key].so.push(tr.dataset.so);
+            }
+        );
+
+        body.innerHTML = '';
+        var keys = Object.keys(grouped);
+
+        if (!keys.length) {
+            var empty = document.createElement('tr');
+            empty.className = 'empty-row';
+            var emptyCell = document.createElement('td');
+            emptyCell.colSpan = 4;
+            emptyCell.className = 'text-muted';
+            emptyCell.textContent = 'No vehicles assigned yet.';
+            empty.appendChild(emptyCell);
+            body.appendChild(empty);
+            return;
+        }
+
+        keys.forEach(function (key) {
+            var van = grouped[key];
+            var tr = document.createElement('tr');
+            tr.dataset.plate = van.plate;
+            tr.dataset.driver = van.driver;
+            tr.appendChild(makeCell(van.plate || '—', 'fw-semibold'));
+            tr.appendChild(makeCell(van.driver || '—'));
+            tr.appendChild(makeCell(String(van.count), 'text-end'));
+            tr.appendChild(makeCell(van.so.join(', '), 'text-muted small'));
+            body.appendChild(tr);
+        });
+    }
+
+    function flashRow(tr) {
+        tr.classList.add('row-flash');
+        window.setTimeout(function () { tr.classList.remove('row-flash'); }, FLASH_MS);
+    }
+
+    function applyEvent(payload) {
+        var d = payload && payload.delivery;
+        if (!d) { return; }
+
+        // The row may currently live in any section — drop it everywhere first.
+        removeRow(d.id);
+
+        if (payload.event !== 'deleted') {
+            var tbody = tbodyFor(d.status);
+            if (tbody) {
+                var row = buildRow(d);
+                tbody.appendChild(row);
+                flashRow(row);
+            }
+        }
+
+        Object.keys(SECTION_TBODY).forEach(function (status) {
+            ensureEmptyRow(tbodyFor(status));
+        });
+        refreshCounts();
+        refreshVanDetails();
+    }
+
+    function setLive(className, label) {
+        var el = document.getElementById('live-indicator');
+        if (!el) { return; }
+        el.className = 'badge ' + className;
+        el.textContent = label;
+    }
+
+    var socket = null;
+    var retryTimer = null;
+
+    function connect() {
+        var scheme = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+        socket = new WebSocket(scheme + window.location.host + WS_PATH);
+
+        socket.onopen = function () { setLive('bg-success', 'Live'); };
+
+        socket.onmessage = function (event) {
+            try {
+                applyEvent(JSON.parse(event.data));
+            } catch (err) {
+                console.error('Invalid delivery payload', err);
+            }
+        };
+
+        socket.onclose = function () {
+            setLive('bg-secondary', 'Reconnecting…');
+            window.clearTimeout(retryTimer);
+            retryTimer = window.setTimeout(connect, RECONNECT_MS);
+        };
+
+        socket.onerror = function () { socket.close(); };
+    }
+
+    connect();
+})();
+</script>
+{% endblock %}

@@ -11,6 +11,8 @@ from django.core.management import call_command
 from customers.models import Customer
 from sales_funnel.models import SalesFunnel
 from sales_proposals.models import Proposal, ProposalItem
+from sales_proposals.views import update_sales_funnel
+from teams.models import Group, Team, TeamMembership
 from users.models import User
 
 
@@ -388,3 +390,340 @@ class SalesFunnelDealsHistoryTests(TestCase):
         self.assertContains(response, 'Lost Deal One')
         self.assertContains(response, 'Client stayed with incumbent supplier.')
         self.assertNotContains(response, 'Won Deal One')
+
+
+class TechnicalSalesFunnelScopeTests(TestCase):
+    def setUp(self):
+        password = 'testpass123'
+        self.avp = User.objects.create_user(
+            username='avp_tf',
+            password=password,
+            role='avp',
+            email='avp_tf@example.com',
+        )
+        self.asm = User.objects.create_user(
+            username='asm_tf',
+            password=password,
+            role='asm',
+            email='asm_tf@example.com',
+        )
+        self.supervisor = User.objects.create_user(
+            username='sup_tf',
+            password=password,
+            role='supervisor',
+            email='sup_tf@example.com',
+        )
+        self.techmgr = User.objects.create_user(
+            username='techmgr_tf',
+            password=password,
+            role='techmgr',
+            email='techmgr_tf@example.com',
+        )
+        self.techsales = User.objects.create_user(
+            username='techsales_tf',
+            password=password,
+            role='technical_sales',
+            email='techsales_tf@example.com',
+            initials='TSF',
+        )
+        self.other_techsales = User.objects.create_user(
+            username='techsales_other_tf',
+            password=password,
+            role='technical_sales',
+            email='techsales_other_tf@example.com',
+            initials='TSO',
+        )
+        self.salesperson = User.objects.create_user(
+            username='seller_tf',
+            password=password,
+            role='salesperson',
+            email='seller_tf@example.com',
+            initials='SLF',
+        )
+
+        self.team = Team.objects.create(
+            name='Technical Funnel Team',
+            avp=self.avp,
+            asm=self.asm,
+            tech_manager=self.techmgr,
+        )
+        self.group = Group.objects.create(
+            name='Technical Funnel Group',
+            team=self.team,
+            supervisor=self.supervisor,
+        )
+        TeamMembership.objects.create(user=self.salesperson, group=self.group)
+        self.team.technical_sales.add(self.techsales)
+
+        self.customer = Customer.objects.create(
+            company_name='Scoped Customer',
+            contact_person_name='Scope Buyer',
+            email='scope@example.com',
+            salesperson=self.salesperson,
+        )
+
+        proposal = Proposal.objects.create(
+            customer=self.customer,
+            created_by=self.techsales,
+            subject='Linked Technical Deal',
+        )
+        ProposalItem.objects.create(
+            proposal=proposal,
+            part_number='TS-LINK',
+            description='Linked technical scope item',
+            quantity=Decimal('1'),
+            unit_cost=Decimal('100.00'),
+            unit_price=Decimal('250.00'),
+        )
+        proposal.calculate_totals()
+        update_sales_funnel(proposal)
+
+        self.linked_entry = SalesFunnel.objects.get(proposal=proposal)
+        self.manual_ts_entry = SalesFunnel.objects.create(
+            date_created=timezone.localdate(),
+            company_name='Manual Technical Entry',
+            brand='Cisco',
+            requirement_description='Manual entry should stay hidden from TS funnel dashboard',
+            cost=Decimal('100.00'),
+            retail=Decimal('200.00'),
+            stage='quoted',
+            salesperson=self.techsales,
+            probability=50,
+        )
+        self.other_sales_entry = SalesFunnel.objects.create(
+            date_created=timezone.localdate(),
+            company_name='Other Salesperson Entry',
+            brand='HP',
+            requirement_description='Regular salesperson deal',
+            cost=Decimal('100.00'),
+            retail=Decimal('300.00'),
+            stage='quoted',
+            salesperson=self.salesperson,
+            probability=50,
+        )
+
+    def test_technical_sales_dashboard_shows_only_linked_own_proposal_entries(self):
+        self.client.force_login(self.techsales)
+
+        response = self.client.get(reverse('sales_funnel:dashboard'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Scoped Customer')
+        self.assertNotContains(response, 'Manual Technical Entry')
+        self.assertNotContains(response, 'Other Salesperson Entry')
+
+    def test_technical_manager_dashboard_shows_only_linked_entries_of_scoped_techsales(self):
+        self.client.force_login(self.techmgr)
+
+        response = self.client.get(reverse('sales_funnel:dashboard'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Scoped Customer')
+        self.assertNotContains(response, 'Manual Technical Entry')
+        self.assertNotContains(response, 'Other Salesperson Entry')
+
+    def test_technical_manager_cannot_open_unscoped_funnel_entry_by_url(self):
+        self.client.force_login(self.techmgr)
+
+        response = self.client.get(reverse('sales_funnel:entry_detail', args=[self.other_sales_entry.pk]))
+
+        self.assertRedirects(response, reverse('sales_funnel:dashboard'))
+
+    def test_technical_sales_filter_dropdown_only_lists_self(self):
+        self.client.force_login(self.techsales)
+
+        response = self.client.get(reverse('sales_funnel:dashboard'))
+
+        self.assertEqual(response.status_code, 200)
+        salesperson_qs = response.context['filter_form'].fields['salesperson'].queryset
+        self.assertEqual(list(salesperson_qs.values_list('id', flat=True)), [self.techsales.id])
+
+    def test_technical_manager_filter_dropdown_only_lists_scoped_techsales(self):
+        self.client.force_login(self.techmgr)
+
+        response = self.client.get(reverse('sales_funnel:dashboard'))
+
+        self.assertEqual(response.status_code, 200)
+        salesperson_ids = list(
+            response.context['filter_form'].fields['salesperson'].queryset.values_list('id', flat=True)
+        )
+        self.assertEqual(salesperson_ids, [self.techsales.id])
+
+
+class AdminTechnicalSalesTeamFilterTests(TestCase):
+    def test_admin_team_filter_includes_technical_sales_funnel_entry_via_tsg_team(self):
+        password = 'testpass123'
+        admin = User.objects.create_user(
+            username='admin_tsf',
+            password=password,
+            role='admin',
+            email='admin_tsf@example.com',
+        )
+        avp = User.objects.create_user(
+            username='avp_tsf',
+            password=password,
+            role='avp',
+            email='avp_tsf@example.com',
+        )
+        asm = User.objects.create_user(
+            username='asm_tsf',
+            password=password,
+            role='asm',
+            email='asm_tsf@example.com',
+        )
+        supervisor = User.objects.create_user(
+            username='sup_tsf',
+            password=password,
+            role='supervisor',
+            email='sup_tsf@example.com',
+        )
+        techsales = User.objects.create_user(
+            username='techsales_team_filter',
+            password=password,
+            role='technical_sales',
+            email='techsales_team_filter@example.com',
+            initials='TSG',
+            handles_all_technical_teams=True,
+        )
+        tsg_team = Team.objects.create(
+            name='TSG',
+            tech_manager=User.objects.create_user(
+                username='techmgr_tsf',
+                password=password,
+                role='techmgr',
+                email='techmgr_tsf@example.com',
+            ),
+        )
+        sales_team = Team.objects.create(
+            name='TEAM B',
+            avp=avp,
+            asm=asm,
+        )
+        group = Group.objects.create(
+            name='TEAM B Group',
+            team=sales_team,
+            supervisor=supervisor,
+        )
+        salesperson = User.objects.create_user(
+            username='seller_tsf',
+            password=password,
+            role='salesperson',
+            email='seller_tsf@example.com',
+            initials='JLU',
+        )
+        TeamMembership.objects.create(user=salesperson, group=group)
+        customer = Customer.objects.create(
+            company_name='Robinsons Retail Holdings, Inc.',
+            contact_person_name='Retail Buyer',
+            email='retail@example.com',
+            salesperson=salesperson,
+        )
+        proposal = Proposal.objects.create(
+            customer=customer,
+            created_by=techsales,
+            subject='RAM and SSD requirements',
+        )
+        ProposalItem.objects.create(
+            proposal=proposal,
+            part_number='TSG-001',
+            description='Technical parts',
+            quantity=Decimal('1'),
+            unit_cost=Decimal('4200.00'),
+            unit_price=Decimal('5500.00'),
+        )
+        proposal.calculate_totals()
+        update_sales_funnel(proposal)
+
+        self.client.force_login(admin)
+        response = self.client.get(reverse('sales_funnel:dashboard'), {'team': tsg_team.id})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Robinsons Retail Holdings, Inc.')
+
+    def test_admin_team_filter_includes_singleton_technical_sales_funnel_entry_via_tsg_team(self):
+        password = 'testpass123'
+        admin = User.objects.create_user(
+            username='admin_singleton_tsf',
+            password=password,
+            role='admin',
+            email='admin_singleton_tsf@example.com',
+        )
+        avp = User.objects.create_user(
+            username='avp_singleton_tsf',
+            password=password,
+            role='avp',
+            email='avp_singleton_tsf@example.com',
+        )
+        asm = User.objects.create_user(
+            username='asm_singleton_tsf',
+            password=password,
+            role='asm',
+            email='asm_singleton_tsf@example.com',
+        )
+        supervisor = User.objects.create_user(
+            username='sup_singleton_tsf',
+            password=password,
+            role='supervisor',
+            email='sup_singleton_tsf@example.com',
+        )
+        techsales = User.objects.create_user(
+            username='singleton_techsales_team_filter',
+            password=password,
+            role='technical_sales',
+            email='singleton_techsales_team_filter@example.com',
+            initials='TSG',
+        )
+        tsg_team = Team.objects.create(
+            name='TSG',
+            tech_manager=User.objects.create_user(
+                username='techmgr_singleton_tsf',
+                password=password,
+                role='techmgr',
+                email='techmgr_singleton_tsf@example.com',
+            ),
+        )
+        sales_team = Team.objects.create(
+            name='TEAM B',
+            avp=avp,
+            asm=asm,
+        )
+        group = Group.objects.create(
+            name='TEAM B Group Singleton Funnel',
+            team=sales_team,
+            supervisor=supervisor,
+        )
+        salesperson = User.objects.create_user(
+            username='seller_singleton_tsf',
+            password=password,
+            role='salesperson',
+            email='seller_singleton_tsf@example.com',
+            initials='JLU',
+        )
+        TeamMembership.objects.create(user=salesperson, group=group)
+        customer = Customer.objects.create(
+            company_name='Singleton Robinsons Retail Holdings, Inc.',
+            contact_person_name='Retail Buyer',
+            email='singleton-retail@example.com',
+            salesperson=salesperson,
+        )
+        proposal = Proposal.objects.create(
+            customer=customer,
+            created_by=techsales,
+            subject='Singleton RAM and SSD requirements',
+        )
+        ProposalItem.objects.create(
+            proposal=proposal,
+            part_number='TSG-002',
+            description='Singleton technical parts',
+            quantity=Decimal('1'),
+            unit_cost=Decimal('4200.00'),
+            unit_price=Decimal('5500.00'),
+        )
+        proposal.calculate_totals()
+        update_sales_funnel(proposal)
+
+        self.client.force_login(admin)
+        response = self.client.get(reverse('sales_funnel:dashboard'), {'team': tsg_team.id})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Singleton Robinsons Retail Holdings, Inc.')

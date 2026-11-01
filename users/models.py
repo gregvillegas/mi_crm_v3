@@ -15,6 +15,7 @@ class User(AbstractUser):
         ('teamlead', 'Teamlead'),
         ('techmgr', 'Technical Manager'),
         ('asst_techmgr', 'Assistant Technical Manager'),
+        ('technical_sales', 'Technical Sales'),
         ('marketing', 'Marketing'),
     )
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='salesperson')
@@ -40,6 +41,7 @@ class User(AbstractUser):
         ('purchasing_supervisor', 'Purchasing Supervisor'),
         ('technical_manager', 'Technical Manager'),
         ('assistant_technical_manager', 'Assistant Technical Manager'),
+        ('technical_sales', 'Technical Sales'),
         ('sr_teamlead', 'Sr. Teamlead'),
         ('purchasing_staff', 'Purchasing Staff'),
         ('accounting_staff', 'Accounting Staff'),
@@ -49,6 +51,23 @@ class User(AbstractUser):
     job_title = models.CharField(max_length=50, choices=JOB_TITLE_CHOICES, blank=True)
     last_activity = models.DateTimeField(null=True, blank=True, help_text='Timestamp of last user activity')
     is_active = models.BooleanField(default=True, help_text='Designates whether this user should be treated as active. Unselect this instead of deleting accounts.')
+
+    # --- Technical Sales scoping flags -------------------------------------
+    # When True, a Technical Sales user covers the customers of ALL teams that
+    # have a Technical Manager (the "one Technical Sales person handles both
+    # Team A and Team B" case). When False, coverage comes from the teams the
+    # user is explicitly attached to via Team.technical_sales.
+    handles_all_technical_teams = models.BooleanField(
+        default=False,
+        help_text='Technical Sales only: cover every team that has a Technical Manager (single-person setup).',
+    )
+    # When True, this Technical Sales user has "mastered" proposal creation and
+    # their proposals no longer require Technical Manager approval before being
+    # sent. When False, every proposal they create requires approval.
+    ts_approval_exempt = models.BooleanField(
+        default=False,
+        help_text='Technical Sales only: proposals no longer require Technical Manager approval.',
+    )
 
     # Add related_name to resolve clashes with the default User model
     groups = models.ManyToManyField(

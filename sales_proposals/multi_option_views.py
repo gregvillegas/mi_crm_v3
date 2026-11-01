@@ -16,7 +16,8 @@ from .multi_option_forms import (
     OptionGroupFormSet,
     MultiOptionAttachmentFormSet,
 )
-from .views import update_sales_funnel, notify_pending_approver
+from .views import update_sales_funnel, notify_pending_approver, can_access_proposal
+from customers.permissions import visible_customers_queryset
 
 
 def _parse_option_items(request):
@@ -44,7 +45,12 @@ def multi_option_proposal_create(request):
     customer_id = request.GET.get('customer')
     customer = None
     if customer_id:
-        customer = get_object_or_404(Customer, pk=customer_id)
+        # Re-validate the deep-linked customer against the user's visible scope so
+        # a crafted URL cannot pre-fill a customer the user is not allowed to use.
+        customer = visible_customers_queryset(request.user).filter(pk=customer_id).first()
+        if customer is None:
+            messages.error(request, 'That customer is not available to you.')
+            return redirect('proposal_list')
 
     if request.method == 'POST':
         form = MultiOptionProposalForm(request.POST, user=request.user)
@@ -157,6 +163,9 @@ def multi_option_proposal_create(request):
 def multi_option_proposal_update(request, pk):
     """Edit an existing multi-option proposal."""
     proposal = get_object_or_404(Proposal, pk=pk, is_multi_option=True)
+    if not can_access_proposal(request.user, proposal):
+        messages.error(request, 'You do not have access to that proposal.')
+        return redirect('proposal_list')
 
     # Build existing items JSON for the template
     existing_items = []

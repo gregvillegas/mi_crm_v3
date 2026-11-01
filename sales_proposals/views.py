@@ -509,8 +509,37 @@ def visible_proposals_queryset(user):
         member_ids.append(user.id)
         return Proposal.objects.filter(created_by_id__in=member_ids)
 
+    if user.role == 'technical_sales':
+        # Technical Sales see only the proposals they authored. Explicit so the
+        # role never falls through to the "see all" default below.
+        return Proposal.objects.filter(created_by=user)
+
+    if user.role in ('techmgr', 'asst_techmgr'):
+        # Technical Manager / Assistant see the proposals authored by the
+        # Technical Sales staff covering the team(s) they head.
+        from teams.models import tech_manager_team_ids, technical_sales_users_for_teams
+        ts_ids = list(
+            technical_sales_users_for_teams(tech_manager_team_ids(user))
+            .values_list('id', flat=True)
+        )
+        return Proposal.objects.filter(created_by_id__in=ts_ids)
+
     # Admins, VPs, GMs, president see all
     return Proposal.objects.all()
+
+
+def can_access_proposal(user, proposal):
+    """
+    True if `user` may open a specific proposal directly by URL/ID.
+
+    Only the roles whose proposal visibility is explicitly scoped (the
+    Technical Sales family) are restricted here, so existing role flows — and
+    the approval inbox — are unaffected. This closes the gap where a Technical
+    Sales user could otherwise open another author's proposal via a numeric ID.
+    """
+    if getattr(user, 'role', None) in ('technical_sales', 'techmgr', 'asst_techmgr'):
+        return visible_proposals_queryset(user).filter(pk=proposal.pk).exists()
+    return True
 
 
 def _apply_proposal_list_filters(request, proposals):
@@ -534,19 +563,37 @@ def _apply_proposal_list_filters(request, proposals):
         except (ValueError, TypeError):
             pass
 
-    from teams.models import asm_scoped_groups
+    from teams.models import asm_scoped_groups, technical_sales_team_ids
     selected_team = request.GET.get('team') or ''
     selected_group = request.GET.get('group') or ''
+
+    def _technical_sales_ids_for_team(team_id):
+        technical_sales_users = User.objects.filter(role='technical_sales', is_active=True)
+        return [
+            technical_user.id
+            for technical_user in technical_sales_users
+            if team_id in technical_sales_team_ids(technical_user)
+        ]
+
+    def _team_filter_q(team_id):
+        q = Q(created_by__team_membership__group__team_id=team_id)
+        technical_sales_ids = _technical_sales_ids_for_team(team_id)
+        if technical_sales_ids:
+            q |= Q(created_by__role='technical_sales', created_by_id__in=technical_sales_ids)
+        return q
+
+    def _group_filter_q(group_id):
+        return Q(created_by__team_membership__group_id=group_id)
 
     if request.user.role in ['admin', 'gm', 'vp', 'president', 'avp']:
         if selected_team:
             try:
-                proposals = proposals.filter(created_by__team_membership__group__team_id=int(selected_team))
+                proposals = proposals.filter(_team_filter_q(int(selected_team)))
             except (ValueError, TypeError):
                 pass
         if selected_group:
             try:
-                proposals = proposals.filter(created_by__team_membership__group_id=int(selected_group))
+                proposals = proposals.filter(_group_filter_q(int(selected_group)))
             except (ValueError, TypeError):
                 pass
     elif request.user.role in ['asm', 'sm']:
@@ -557,7 +604,7 @@ def _apply_proposal_list_filters(request, proposals):
         if selected_group:
             try:
                 if int(selected_group) in allowed_group_ids:
-                    proposals = proposals.filter(created_by__team_membership__group_id=int(selected_group))
+                    proposals = proposals.filter(_group_filter_q(int(selected_group)))
             except (ValueError, TypeError):
                 pass
 
@@ -642,6 +689,24 @@ def export_proposals_excel(request):
 @login_required
 def proposal_list(request):
     proposals = visible_proposals_queryset(request.user)
+
+    def _technical_sales_ids_for_team(team_id):
+        technical_sales_users = User.objects.filter(role='technical_sales', is_active=True)
+        return [
+            technical_user.id
+            for technical_user in technical_sales_users
+            if team_id in technical_sales_team_ids(technical_user)
+        ]
+
+    def _team_filter_q(team_id):
+        q = Q(created_by__team_membership__group__team_id=team_id)
+        technical_sales_ids = _technical_sales_ids_for_team(team_id)
+        if technical_sales_ids:
+            q |= Q(created_by__role='technical_sales', created_by_id__in=technical_sales_ids)
+        return q
+
+    def _group_filter_q(group_id):
+        return Q(created_by__team_membership__group_id=group_id)
     
     # Get list of salespeople for filter dropdown (from the visible proposals)
     salespeople_ids = proposals.values_list('created_by', flat=True).distinct()
@@ -674,7 +739,7 @@ def proposal_list(request):
     #   * ASM + SM      -> ONLY a Group dropdown, limited to the groups THEY handle
     #                      (option A). The selected group is validated against that
     #                      allowed set so a hand-typed ?group= can't widen the view.
-    from teams.models import Team as _TeamModel, Group as _GroupModel, asm_scoped_groups
+    from teams.models import Team as _TeamModel, Group as _GroupModel, asm_scoped_groups, technical_sales_team_ids
     show_team_group_filters = request.user.role in ['admin', 'gm', 'vp', 'president', 'avp']
     show_group_filter = request.user.role in ['asm', 'sm']
     selected_team = request.GET.get('team') or ''
@@ -685,16 +750,12 @@ def proposal_list(request):
     if show_team_group_filters:
         if selected_team:
             try:
-                proposals = proposals.filter(
-                    created_by__team_membership__group__team_id=int(selected_team)
-                )
+                proposals = proposals.filter(_team_filter_q(int(selected_team)))
             except (ValueError, TypeError):
                 selected_team = ''
         if selected_group:
             try:
-                proposals = proposals.filter(
-                    created_by__team_membership__group_id=int(selected_group)
-                )
+                proposals = proposals.filter(_group_filter_q(int(selected_group)))
             except (ValueError, TypeError):
                 selected_group = ''
 
@@ -725,9 +786,7 @@ def proposal_list(request):
         if selected_group:
             try:
                 if int(selected_group) in allowed_group_ids:
-                    proposals = proposals.filter(
-                        created_by__team_membership__group_id=int(selected_group)
-                    )
+                    proposals = proposals.filter(_group_filter_q(int(selected_group)))
                 else:
                     selected_group = ''
             except (ValueError, TypeError):
@@ -791,6 +850,27 @@ def proposal_list(request):
                         team_name = sup_group.team.name
                 except Exception:
                     pass
+            # Technical Sales proposals belong to the Technical Sales team(s)
+            # resolved by the shared helper. Prefer an actual technical team
+            # (a Team with a Technical Manager) when one is in scope so the
+            # section labels line up with the Team filter dropdown.
+            if team_name == "Unassigned" and proposal.created_by.role == 'technical_sales':
+                try:
+                    from teams.models import Team as _Team, technical_sales_team_ids
+                    ts_team_ids = sorted(technical_sales_team_ids(proposal.created_by))
+                    if ts_team_ids:
+                        ts_team = (
+                            _Team.objects
+                            .filter(id__in=ts_team_ids, tech_manager__isnull=False)
+                            .order_by('name')
+                            .first()
+                        )
+                        if ts_team is None:
+                            ts_team = _Team.objects.filter(id=ts_team_ids[0]).first()
+                        if ts_team:
+                            team_name = ts_team.name
+                except Exception:
+                    pass
 
             # For SM viewing their own proposals: label as "On behalf" instead of team name
             if request.user.role == 'sm' and proposal.created_by_id == request.user.id:
@@ -841,7 +921,12 @@ def proposal_create(request):
     customer_id = request.GET.get('customer')
     customer = None
     if customer_id:
-        customer = get_object_or_404(Customer, pk=customer_id)
+        # Only allow pre-selecting a customer the user is actually scoped to.
+        # Never trust the query param on its own.
+        customer = visible_customers_queryset(request.user).filter(pk=customer_id).first()
+        if customer is None:
+            messages.error(request, 'Customer not found or not within your scope.')
+            return redirect('proposal_list')
 
     if request.method == 'POST':
         form = ProposalForm(request.POST, user=request.user)
@@ -921,6 +1006,9 @@ def proposal_create(request):
 @login_required
 def proposal_update(request, pk):
     proposal = get_object_or_404(Proposal, pk=pk)
+    if not can_access_proposal(request.user, proposal):
+        messages.error(request, 'That proposal is not within your scope.')
+        return redirect('proposal_list')
     if request.method == 'POST':
         form = ProposalForm(request.POST, instance=proposal, user=request.user)
         formset = ProposalItemFormSet(request.POST, instance=proposal)
@@ -1056,11 +1144,17 @@ def proposal_update(request, pk):
 @login_required
 def proposal_detail(request, pk):
     proposal = get_object_or_404(Proposal, pk=pk)
+    if not can_access_proposal(request.user, proposal):
+        messages.error(request, 'That proposal is not within your scope.')
+        return redirect('proposal_list')
     return render(request, 'sales_proposals/proposal_detail.html', {'proposal': proposal})
 
 @login_required
 def proposal_delete(request, pk):
     proposal = get_object_or_404(Proposal, pk=pk)
+    if not can_access_proposal(request.user, proposal):
+        messages.error(request, 'That proposal is not within your scope.')
+        return redirect('proposal_list')
     if request.method == 'POST':
         proposal.delete()
         messages.success(request, 'Proposal deleted successfully.')
@@ -1732,12 +1826,18 @@ def generate_pdf_buffer(proposal):
 @login_required
 def proposal_pdf(request, pk):
     proposal = get_object_or_404(Proposal, pk=pk)
+    if not can_access_proposal(request.user, proposal):
+        messages.error(request, 'That proposal is not within your scope.')
+        return redirect('proposal_list')
     buffer = generate_pdf_buffer(proposal)
     return HttpResponse(buffer, content_type='application/pdf')
 
 @login_required
 def proposal_email(request, pk):
     proposal = get_object_or_404(Proposal, pk=pk)
+    if not can_access_proposal(request.user, proposal):
+        messages.error(request, 'That proposal is not within your scope.')
+        return redirect('proposal_list')
     # Block sending an empty proposal (no line items => ₱0.00 quotation)
     if not proposal.has_line_items:
         messages.warning(request, "This proposal has no items. Add at least one item before emailing the customer.")

@@ -10,7 +10,15 @@ from django.conf import settings
 from .models import SalesFunnel
 from .forms import SalesFunnelForm, FunnelFilterForm, BulkUpdateStageForm
 from users.models import User
-from teams.models import Team, Group, TeamMembership, asm_scoped_groups
+from teams.models import (
+    Team,
+    Group,
+    TeamMembership,
+    asm_scoped_groups,
+    tech_manager_team_ids,
+    technical_sales_team_ids,
+    technical_sales_users_for_teams,
+)
 from customers.models import Customer, CustomerHistory
 import csv
 import logging
@@ -115,13 +123,13 @@ def _send_avp_notes_notification(request, entry, old_notes, new_notes):
 
 def can_access_funnel(user):
     """Check if user can access sales funnel features"""
-    return user.role in ['salesperson', 'supervisor', 'teamlead', 'asm', 'sm', 'avp', 'admin', 'president', 'gm', 'vp']
+    return user.role in ['salesperson', 'supervisor', 'teamlead', 'asm', 'sm', 'avp', 'admin', 'president', 'gm', 'vp', 'technical_sales', 'techmgr', 'asst_techmgr']
 
 def is_salesperson(user):
     return user.role == 'salesperson'
 
 def is_manager(user):
-    return user.role in ['supervisor', 'teamlead', 'asm', 'sm', 'avp', 'admin', 'president', 'gm', 'vp']
+    return user.role in ['supervisor', 'teamlead', 'asm', 'sm', 'avp', 'admin', 'president', 'gm', 'vp', 'techmgr', 'asst_techmgr']
 
 def is_exec_admin(user):
     return user.role in ['admin', 'president', 'gm', 'vp']
@@ -189,6 +197,16 @@ def funnel_scope_q(user):
         asm_ids = list(teams.exclude(asm__isnull=True).values_list('asm_id', flat=True))
         supervisor_ids = list(Group.objects.filter(team__in=teams, supervisor__isnull=False).values_list('supervisor_id', flat=True))
         return Q(salesperson_id__in=sp_ids + asm_ids + supervisor_ids) | Q(salesperson=user)
+    if user.role == 'technical_sales':
+        # Technical Sales only see the funnel rows generated from the proposals
+        # they authored. This excludes manual funnel rows and prevents the role
+        # from becoming a second general-purpose Account Manager pipeline.
+        return Q(salesperson=user, proposal__created_by=user)
+    if user.role in ('techmgr', 'asst_techmgr'):
+        # Technical Manager / Assistant see only proposal-linked funnel rows
+        # authored by the Technical Sales staff covering the team(s) they head.
+        ts_ids = list(technical_sales_users_for_teams(tech_manager_team_ids(user)).values_list('id', flat=True))
+        return Q(salesperson_id__in=ts_ids, proposal__created_by_id__in=ts_ids)
     # Executives and admins can see all entries
     return None
 
@@ -244,74 +262,22 @@ def funnel_dashboard(request):
     """Main dashboard view for sales funnel"""
     user = request.user
     view_mode = request.GET.get('view', 'card')
+
+    def _team_filter_q(team):
+        q = Q(salesperson__team_membership__group__team=team)
+        technical_sales_ids = [
+            technical_user.id
+            for technical_user in User.objects.filter(role='technical_sales', is_active=True)
+            if team.id in technical_sales_team_ids(technical_user)
+        ]
+        if technical_sales_ids:
+            q |= Q(salesperson__role='technical_sales', salesperson_id__in=technical_sales_ids)
+        return q
+
+    def _group_filter_q(group):
+        return Q(salesperson__team_membership__group=group)
     
-    # Get funnel entries based on user role
-    if user.role == 'salesperson':
-        funnel_entries = SalesFunnel.objects.filter(
-            salesperson=user,
-            is_active=True,
-            is_closed=False
-        )
-    elif user.role == 'supervisor':
-        # Supervisor can see entries from their groups
-        groups = Group.objects.filter(supervisor=user)
-        salespeople_ids = TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True)
-        funnel_entries = SalesFunnel.objects.filter(
-            Q(salesperson_id__in=salespeople_ids) | Q(salesperson=user),
-            is_active=True,
-            is_closed=False
-        )
-    elif user.role == 'teamlead':
-        # Teamlead can see entries from their assigned group
-        teamlead_groups = Group.objects.filter(teamlead=user)
-        salespeople_ids = TeamMembership.objects.filter(group__in=teamlead_groups).values_list('user_id', flat=True)
-        funnel_entries = SalesFunnel.objects.filter(
-            salesperson_id__in=salespeople_ids,
-            is_active=True,
-            is_closed=False
-        )
-    elif user.role == 'asm':
-        # ASM sees entries only from the groups they handle (sm_managers), with a
-        # whole-team fallback when none are assigned. Mirrors Proposals/Monitoring.
-        groups = asm_scoped_groups(user)
-        salespeople_ids = list(TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True))
-        supervisor_ids = list(groups.filter(supervisor__isnull=False).values_list('supervisor_id', flat=True))
-        visible_ids = salespeople_ids + supervisor_ids
-        funnel_entries = SalesFunnel.objects.filter(
-            Q(salesperson_id__in=visible_ids) | Q(salesperson=user),
-            is_active=True,
-            is_closed=False
-        )
-    elif user.role == 'sm':
-        # SM sees only their assigned groups
-        groups = user.sm_groups.all()
-        salespeople_ids = list(TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True))
-        supervisor_ids = list(Group.objects.filter(id__in=groups.values_list('id', flat=True), supervisor__isnull=False).values_list('supervisor_id', flat=True))
-        visible_ids = salespeople_ids + supervisor_ids
-        funnel_entries = SalesFunnel.objects.filter(
-            Q(salesperson_id__in=visible_ids) | Q(salesperson=user),
-            is_active=True,
-            is_closed=False
-        )
-    elif user.role == 'avp':
-        # AVP can see entries from their teams
-        teams = Team.objects.filter(avp=user)
-        groups = Group.objects.filter(team__in=teams)
-        salespeople_ids = list(TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True))
-        asm_ids = list(teams.exclude(asm__isnull=True).values_list('asm_id', flat=True))
-        supervisor_ids = list(Group.objects.filter(team__in=teams, supervisor__isnull=False).values_list('supervisor_id', flat=True))
-        visible_ids = salespeople_ids + asm_ids + supervisor_ids
-        funnel_entries = SalesFunnel.objects.filter(
-            Q(salesperson_id__in=visible_ids) | Q(salesperson=user),
-            is_active=True,
-            is_closed=False
-        )
-    else:
-        # Executives and admins can see all entries
-        funnel_entries = SalesFunnel.objects.filter(
-            is_active=True,
-            is_closed=False
-        )
+    funnel_entries = visible_funnel_entries(user)
     accessible_entries = funnel_entries
     
     # Apply filters if provided
@@ -331,9 +297,9 @@ def funnel_dashboard(request):
         if brand:
             funnel_entries = funnel_entries.filter(brand__icontains=brand.strip())
         if team:
-            funnel_entries = funnel_entries.filter(salesperson__team_membership__group__team=team)
+            funnel_entries = funnel_entries.filter(_team_filter_q(team))
         if group:
-            funnel_entries = funnel_entries.filter(salesperson__team_membership__group=group)
+            funnel_entries = funnel_entries.filter(_group_filter_q(group))
         if salesperson:
             funnel_entries = funnel_entries.filter(salesperson=salesperson)
         if min_amount is not None:
@@ -356,39 +322,7 @@ def funnel_dashboard(request):
     services_entries = list(funnel_entries.filter(stage='services').select_related('salesperson', 'customer', 'proposal'))
     all_visible_entries = quoted_entries + closable_entries + project_entries + services_entries
     
-    # Get closed deals statistics based on same user role logic
-    if user.role == 'salesperson':
-        closed_deals = SalesFunnel.objects.filter(salesperson=user, is_closed=True)
-    elif user.role == 'supervisor':
-        groups = Group.objects.filter(supervisor=user)
-        salespeople_ids = TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True)
-        closed_deals = SalesFunnel.objects.filter(Q(salesperson_id__in=salespeople_ids) | Q(salesperson=user), is_closed=True)
-    elif user.role == 'teamlead':
-        teamlead_groups = Group.objects.filter(teamlead=user)
-        salespeople_ids = TeamMembership.objects.filter(group__in=teamlead_groups).values_list('user_id', flat=True)
-        closed_deals = SalesFunnel.objects.filter(salesperson_id__in=salespeople_ids, is_closed=True)
-    elif user.role == 'asm':
-        groups = asm_scoped_groups(user)
-        salespeople_ids = list(TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True))
-        supervisor_ids = list(groups.filter(supervisor__isnull=False).values_list('supervisor_id', flat=True))
-        visible_ids = salespeople_ids + supervisor_ids
-        closed_deals = SalesFunnel.objects.filter(Q(salesperson_id__in=visible_ids) | Q(salesperson=user), is_closed=True)
-    elif user.role == 'sm':
-        groups = user.sm_groups.all()
-        salespeople_ids = list(TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True))
-        supervisor_ids = list(Group.objects.filter(id__in=groups.values_list('id', flat=True), supervisor__isnull=False).values_list('supervisor_id', flat=True))
-        visible_ids = salespeople_ids + supervisor_ids
-        closed_deals = SalesFunnel.objects.filter(Q(salesperson_id__in=visible_ids) | Q(salesperson=user), is_closed=True)
-    elif user.role == 'avp':
-        teams = Team.objects.filter(avp=user)
-        groups = Group.objects.filter(team__in=teams)
-        salespeople_ids = list(TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True))
-        asm_ids = list(teams.exclude(asm__isnull=True).values_list('asm_id', flat=True))
-        supervisor_ids = list(Group.objects.filter(team__in=teams, supervisor__isnull=False).values_list('supervisor_id', flat=True))
-        visible_ids = salespeople_ids + asm_ids + supervisor_ids
-        closed_deals = SalesFunnel.objects.filter(Q(salesperson_id__in=visible_ids) | Q(salesperson=user), is_closed=True)
-    else:
-        closed_deals = SalesFunnel.objects.filter(is_closed=True)
+    closed_deals = _closed_deals_for_user(user)
     
     # Calculate won/lost statistics
     won_deals = closed_deals.filter(deal_outcome='won')
@@ -476,6 +410,21 @@ def export_funnel_report(request):
     from openpyxl.utils import get_column_letter
 
     user = request.user
+
+    def _team_filter_q(team):
+        q = Q(salesperson__team_membership__group__team=team)
+        technical_sales_ids = [
+            technical_user.id
+            for technical_user in User.objects.filter(role='technical_sales', is_active=True)
+            if team.id in technical_sales_team_ids(technical_user)
+        ]
+        if technical_sales_ids:
+            q |= Q(salesperson__role='technical_sales', salesperson_id__in=technical_sales_ids)
+        return q
+
+    def _group_filter_q(group):
+        return Q(salesperson__team_membership__group=group)
+
     if user.role == 'salesperson':
         # Salespeople export their own active pipeline.
         qs = SalesFunnel.objects.filter(salesperson=user, is_active=True, is_closed=False)
@@ -525,9 +474,9 @@ def export_funnel_report(request):
         if brand:
             qs = qs.filter(brand__icontains=brand.strip())
         if team:
-            qs = qs.filter(salesperson__team_membership__group__team=team)
+            qs = qs.filter(_team_filter_q(team))
         if group:
-            qs = qs.filter(salesperson__team_membership__group=group)
+            qs = qs.filter(_group_filter_q(group))
         if salesperson:
             qs = qs.filter(salesperson=salesperson)
         if min_amount is not None:
@@ -733,8 +682,8 @@ def funnel_entry_detail(request, entry_id):
     """Read-only detail view for a funnel entry."""
     entry = get_object_or_404(SalesFunnel, id=entry_id)
 
-    if request.user.role == 'salesperson' and entry.salesperson != request.user:
-        messages.error(request, 'You can only view your own funnel entries.')
+    if not can_access_funnel_entry(request.user, entry):
+        messages.error(request, 'You do not have access to that funnel entry.')
         return redirect('sales_funnel:dashboard')
 
     return render(request, 'sales_funnel/entry_detail.html', {
@@ -748,9 +697,8 @@ def edit_funnel_entry(request, entry_id):
     """Edit a funnel entry"""
     entry = get_object_or_404(SalesFunnel, id=entry_id)
     
-    # Check permissions
-    if request.user.role == 'salesperson' and entry.salesperson != request.user:
-        messages.error(request, 'You can only edit your own funnel entries.')
+    if not can_access_funnel_entry(request.user, entry):
+        messages.error(request, 'You do not have access to that funnel entry.')
         return redirect('sales_funnel:dashboard')
     
     if request.method == 'POST':
@@ -804,9 +752,8 @@ def delete_funnel_entry(request, entry_id):
         )
         return redirect('sales_funnel:dashboard')
 
-    # A salesperson may only delete their own (test) entries.
-    if request.user.role == 'salesperson' and entry.salesperson != request.user:
-        messages.error(request, 'You can only delete your own funnel entries.')
+    if not can_access_funnel_entry(request.user, entry):
+        messages.error(request, 'You do not have access to that funnel entry.')
         return redirect('sales_funnel:dashboard')
 
     if request.method == 'POST':
@@ -817,18 +764,21 @@ def delete_funnel_entry(request, entry_id):
     return redirect('sales_funnel:dashboard')
 
 
+def can_access_funnel_entry(user, entry):
+    """True if `user` may open/manage this funnel row within their scoped view."""
+    scope = funnel_scope_q(user)
+    if scope is None:
+        return True
+    return SalesFunnel.objects.filter(scope, pk=entry.pk).exists()
+
+
 def _can_manage_funnel_entry(user, entry):
     """
     May `user` remove/restore this funnel entry? A salesperson may act on their
     own entries; managers/execs on any entry within their scope. Mirrors the
     role scoping used elsewhere in the funnel.
     """
-    if user.role == 'salesperson':
-        return entry.salesperson_id == user.id
-    scope = funnel_scope_q(user)
-    if scope is None:  # exec / admin — unrestricted
-        return True
-    return SalesFunnel.objects.filter(scope, pk=entry.pk).exists()
+    return can_access_funnel_entry(user, entry)
 
 
 @login_required
@@ -989,8 +939,7 @@ def update_entry_stage(request, entry_id):
     if request.method == 'POST':
         entry = get_object_or_404(SalesFunnel, id=entry_id)
         
-        # Check permissions
-        if request.user.role == 'salesperson' and entry.salesperson != request.user:
+        if not can_access_funnel_entry(request.user, entry):
             return JsonResponse({
                 'success': False,
                 'message': 'Permission denied'
@@ -1030,9 +979,7 @@ def update_entry_notes(request, entry_id):
     if request.method == 'POST':
         entry = get_object_or_404(SalesFunnel, id=entry_id)
 
-        # Permission: salesperson can only edit their own entries;
-        # managers/execs can edit any entry they can see.
-        if request.user.role == 'salesperson' and entry.salesperson != request.user:
+        if not can_access_funnel_entry(request.user, entry):
             return JsonResponse({'success': False, 'message': 'Permission denied'}, status=403)
 
         import json
@@ -1060,9 +1007,8 @@ def close_entry(request, entry_id):
     """Mark a funnel entry as closed (won or lost)"""
     entry = get_object_or_404(SalesFunnel, id=entry_id)
     
-    # Check permissions
-    if request.user.role == 'salesperson' and entry.salesperson != request.user:
-        messages.error(request, 'You can only close your own funnel entries.')
+    if not can_access_funnel_entry(request.user, entry):
+        messages.error(request, 'You do not have access to that funnel entry.')
         return redirect('sales_funnel:dashboard')
     
     if request.method == 'POST':
@@ -1159,6 +1105,11 @@ def _closed_deals_for_user(user):
         groups = Group.objects.filter(team__in=teams)
         salespeople_ids = TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True)
         return SalesFunnel.objects.filter(Q(salesperson_id__in=salespeople_ids) | Q(salesperson=user), is_closed=True)
+    if user.role == 'technical_sales':
+        return SalesFunnel.objects.filter(salesperson=user, is_closed=True)
+    if user.role in ('techmgr', 'asst_techmgr'):
+        ts_ids = list(technical_sales_users_for_teams(tech_manager_team_ids(user)).values_list('id', flat=True))
+        return SalesFunnel.objects.filter(salesperson_id__in=ts_ids, is_closed=True)
     # Executives and admins can see all closed deals
     return SalesFunnel.objects.filter(is_closed=True)
 

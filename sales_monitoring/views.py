@@ -26,7 +26,7 @@ from .forms import (
     EmailActivityForm, ProposalActivityForm, TaskActivityForm,
     ProofOfConceptForm
 )
-from teams.models import Group, TeamMembership, SupervisorCommitment, asm_scoped_groups
+from teams.models import Group, TeamMembership, SupervisorCommitment, asm_scoped_groups, tech_manager_team_ids, technical_sales_users_for_teams
 from users.models import User
 from customers.models import Customer
 
@@ -221,8 +221,10 @@ def dashboard(request):
     
     if user.role in ['supervisor', 'asm', 'sm', 'teamlead']:
         return supervisor_dashboard(request)
-    elif user.role == 'salesperson':
+    elif user.role in ['salesperson', 'technical_sales']:
         return salesperson_dashboard(request)
+    elif user.role in ['techmgr', 'asst_techmgr']:
+        return technical_manager_dashboard(request)
     elif user.role == 'avp':
         return avp_dashboard(request)
     elif user.role in ['admin', 'vp', 'gm', 'president']:
@@ -230,6 +232,57 @@ def dashboard(request):
     else:
         # Default fallback for other roles
         return admin_dashboard(request)
+
+@login_required
+def technical_manager_dashboard(request):
+    """Team-scoped dashboard for Technical Managers / Assistant Technical Managers.
+
+    Lists the Technical Sales staff who handle the teams this manager oversees,
+    with a per-person funnel/proposal summary. Intentionally does NOT fall back to
+    the admin dashboard, so a Technical Manager never sees company-wide data.
+    """
+    user = request.user
+    if user.role not in ['techmgr', 'asst_techmgr']:
+        return HttpResponseForbidden("You don't have permission to access this page.")
+
+    from sales_proposals.models import Proposal
+
+    team_ids = tech_manager_team_ids(user)
+    ts_users = technical_sales_users_for_teams(team_ids).order_by(
+        'first_name', 'last_name', 'username'
+    )
+    ts_ids = list(ts_users.values_list('id', flat=True))
+
+    ts_rows = []
+    for ts in ts_users:
+        funnel_qs = SalesFunnel.objects.filter(salesperson=ts)
+        won_qs = funnel_qs.filter(deal_outcome='won')
+        won_profit = won_qs.aggregate(total=Sum(F('retail') - F('cost')))['total'] or 0
+        ts_rows.append({
+            'user': ts,
+            'funnel_total': funnel_qs.count(),
+            'won_count': won_qs.count(),
+            'won_profit': won_profit,
+            'proposal_count': Proposal.objects.filter(created_by=ts).count(),
+            'pending_approval': Proposal.objects.filter(
+                created_by=ts, approval_required=True, status='draft'
+            ).count(),
+        })
+
+    recent_funnel = (
+        SalesFunnel.objects.filter(salesperson_id__in=ts_ids)
+        .select_related('customer', 'salesperson')
+        .order_by('-date_created', '-created_at')[:15]
+        if ts_ids else SalesFunnel.objects.none()
+    )
+
+    context = {
+        'team_ids': sorted(team_ids),
+        'ts_rows': ts_rows,
+        'recent_funnel': recent_funnel,
+        'total_ts': len(ts_rows),
+    }
+    return render(request, 'sales_monitoring/technical_manager_dashboard.html', context)
 
 @login_required
 def supervisor_dashboard(request):
@@ -342,7 +395,7 @@ def salesperson_dashboard(request):
     """Dashboard for salespeople to view and manage their own activities"""
     user = request.user
     
-    if user.role != 'salesperson':
+    if user.role not in ['salesperson', 'technical_sales']:
         return HttpResponseForbidden("You don't have permission to access this page.")
     
     # Get user's activities

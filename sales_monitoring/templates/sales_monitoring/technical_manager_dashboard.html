@@ -1,0 +1,144 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Technical Sales Team{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1><i class="fas fa-screwdriver-wrench"></i> Technical Sales Team</h1>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card border-primary">
+                <div class="card-body text-center">
+                    <h5 class="card-title text-primary mb-1">{{ total_ts }}</h5>
+                    <small class="text-muted">Technical Sales staff</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card border-info">
+                <div class="card-body text-center">
+                    <h5 class="card-title text-info mb-1">{{ recent_funnel|length }}</h5>
+                    <small class="text-muted">Recent funnel entries</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card border-secondary">
+                <div class="card-body text-center">
+                    <h5 class="card-title text-secondary mb-1">{{ team_ids|length }}</h5>
+                    <small class="text-muted">Teams covered</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header">
+            <i class="fas fa-users"></i> Technical Sales Performance
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Technical Sales</th>
+                            <th class="text-end">Funnel Entries</th>
+                            <th class="text-end">Won Deals</th>
+                            <th class="text-end">Won Profit</th>
+                            <th class="text-end">Proposals</th>
+                            <th class="text-end">Pending Approval</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in ts_rows %}
+                        <tr>
+                            <td class="text-truncate" style="max-width: 260px;" title="{{ row.user.get_full_name|default:row.user.username }}">
+                                {{ row.user.get_full_name|default:row.user.username }}
+                                <small class="text-muted d-block">{{ row.user.username }}</small>
+                            </td>
+                            <td class="text-end">{{ row.funnel_total }}</td>
+                            <td class="text-end">{{ row.won_count }}</td>
+                            <td class="text-end">₱{{ row.won_profit|floatformat:2|intcomma }}</td>
+                            <td class="text-end">{{ row.proposal_count }}</td>
+                            <td class="text-end">
+                                {% if row.pending_approval %}
+                                <span class="badge bg-warning text-dark">{{ row.pending_approval }}</span>
+                                {% else %}
+                                <span class="text-muted">0</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="6" class="text-center text-muted py-4">
+                                No Technical Sales staff are attached to your teams yet.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <i class="fas fa-filter"></i> Recent Funnel Entries
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Date</th>
+                            <th>Customer</th>
+                            <th>Requirement</th>
+                            <th>Technical Sales</th>
+                            <th>Stage</th>
+                            <th>Outcome</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for entry in recent_funnel %}
+                        <tr>
+                            <td>{{ entry.date_created|date:"Y-m-d" }}</td>
+                            <td class="text-truncate" style="max-width: 220px;" title="{{ entry.customer.company_name|default:entry.company_name }}">
+                                {{ entry.customer.company_name|default:entry.company_name }}
+                            </td>
+                            <td class="text-truncate" style="max-width: 280px;" title="{{ entry.requirement_description }}">
+                                {{ entry.requirement_description }}
+                            </td>
+                            <td class="text-truncate" style="max-width: 180px;" title="{{ entry.salesperson.get_full_name|default:entry.salesperson.username }}">
+                                {{ entry.salesperson.get_full_name|default:entry.salesperson.username }}
+                            </td>
+                            <td>{{ entry.get_stage_display }}</td>
+                            <td>
+                                {% if entry.deal_outcome == 'won' %}
+                                <span class="badge bg-success">Won</span>
+                                {% elif entry.deal_outcome == 'lost' %}
+                                <span class="badge bg-danger">Lost</span>
+                                {% else %}
+                                <span class="text-muted">Open</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="6" class="text-center text-muted py-4">No funnel entries yet.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

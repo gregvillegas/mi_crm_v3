@@ -91,6 +91,13 @@
                     </div>
                     
                     <div class="mb-3">
+                        {{ form.offering_type|as_crispy_field }}
+                        <small class="text-muted d-block">
+                            <i class="fas fa-screwdriver-wrench me-1"></i>Optional. Classify technical deals (parts, services, repair, in-house/remote support).
+                        </small>
+                    </div>
+                    
+                    <div class="mb-3">
                         {{ form.notes|as_crispy_field }}
                     </div>
                     

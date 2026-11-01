@@ -33,6 +33,7 @@ class MultiOptionProposalForm(ProposalForm):
             'use_availability_column',
             'hide_part_number',
             'is_test',
+            'offering_type',
             'include_bank_details',
             # Bank details
             'php_bank_name', 'php_account_name', 'php_account_number', 'php_account_type',
@@ -78,6 +79,12 @@ class MultiOptionProposalForm(ProposalForm):
             groups = Group.objects.filter(team__in=teams)
             sp_ids = TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True)
             qs = qs.filter(Q(salesperson_id__in=sp_ids) | Q(salesperson=self.user))
+        elif role in ['technical_sales', 'techmgr', 'asst_techmgr']:
+            # Technical Sales / Technical Manager may only pick customers of the
+            # team(s) they cover. Reuse the shared customer-visibility helper so
+            # the multi-option picker matches the single-format form and the list.
+            from customers.permissions import visible_customers_queryset
+            qs = visible_customers_queryset(self.user).filter(is_active=True)
         self.fields['customer'].queryset = qs
         # Blank the empty option label ("---------") so the searchable Customer
         # control shows only its placeholder, matching the single-format form.

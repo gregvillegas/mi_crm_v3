@@ -7,6 +7,16 @@ class Team(models.Model):
     avp = models.ForeignKey(User, on_delete=models.CASCADE, related_name='managed_teams', blank=True, null=True, limit_choices_to={'role__in': ['avp', 'vp', 'gm', 'president']})
     asm = models.ForeignKey(User, on_delete=models.SET_NULL, related_name='asm_teams', blank=True, null=True, limit_choices_to={'role': 'asm'})
     tech_manager = models.ForeignKey(User, on_delete=models.SET_NULL, related_name='tsg_managed_teams', blank=True, null=True, limit_choices_to={'role__in': ['techmgr', 'asst_techmgr']})
+    # Technical Sales staff who handle this team's customers. Two people => one
+    # attached per team; a single person => attached to both teams (or flagged
+    # with User.handles_all_technical_teams).
+    technical_sales = models.ManyToManyField(
+        User,
+        related_name='ts_teams',
+        blank=True,
+        limit_choices_to={'role': 'technical_sales'},
+        help_text="Technical Sales staff who handle this team's customers.",
+    )
 
     def __str__(self):
         return self.name
@@ -260,3 +270,67 @@ def asm_scoped_groups(user):
     if assigned.exists():
         return assigned
     return Group.objects.filter(team__in=user.asm_teams.all())
+
+
+# --- Technical Sales scoping helpers ---------------------------------------
+# Single source of truth for "which teams does this Technical Sales user
+# cover", shared by customer visibility, funnel scoping, proposal scoping and
+# the proposal-form customer picker so the rule never drifts between them.
+
+def technical_sales_team_ids(user):
+    """
+    Team IDs whose customers a Technical Sales user may handle.
+
+    Precedence (management decision):
+      1. If ``handles_all_technical_teams`` is True -> every team that has a
+         Technical Manager assigned (the single-Technical-Sales-person case).
+      2. If this is the only active Technical Sales user -> every team in the
+         CRM (the "only 1 Technical Sales is hired" case).
+      3. Otherwise -> the teams explicitly attached via ``Team.technical_sales``
+         (reverse accessor ``user.ts_teams``).
+
+    Returns a set of ints. Non-Technical-Sales roles return an empty set so a
+    mis-scoped user falls back to "see nothing" rather than "see everything".
+    """
+    if getattr(user, 'role', None) != 'technical_sales':
+        return set()
+    if getattr(user, 'handles_all_technical_teams', False):
+        return {
+            int(tid) for tid in Team.objects.filter(tech_manager__isnull=False)
+            .values_list('id', flat=True)
+        }
+    if User.objects.filter(role='technical_sales', is_active=True).count() == 1:
+        return {int(tid) for tid in Team.objects.values_list('id', flat=True)}
+    return {int(tid) for tid in user.ts_teams.values_list('id', flat=True)}
+
+
+def tech_manager_team_ids(user):
+    """Team IDs headed by this Technical Manager / Assistant (Team.tech_manager)."""
+    if getattr(user, 'role', None) not in ('techmgr', 'asst_techmgr'):
+        return set()
+    return {int(tid) for tid in user.tsg_managed_teams.values_list('id', flat=True)}
+
+
+def technical_sales_users_for_teams(team_ids):
+    """
+    Technical Sales users who handle any of ``team_ids`` — either explicitly
+    attached to one of those teams, flagged to cover all technical teams, or
+    the single active Technical Sales user covering the whole CRM.
+    Used to scope a Technical Manager's view of their staff's funnels/proposals.
+    """
+    if not team_ids:
+        return User.objects.none()
+    singleton_ids = list(
+        User.objects.filter(role='technical_sales', is_active=True)
+        .values_list('id', flat=True)
+    )
+    if len(singleton_ids) != 1:
+        singleton_ids = []
+    return User.objects.filter(
+        models.Q(role='technical_sales', is_active=True)
+        & (
+            models.Q(ts_teams__id__in=list(team_ids))
+            | models.Q(handles_all_technical_teams=True)
+            | models.Q(id__in=singleton_ids)
+        )
+    ).distinct()

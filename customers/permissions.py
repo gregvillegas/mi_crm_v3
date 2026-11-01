@@ -1,6 +1,12 @@
 from django.db.models import Q
 
-from teams.models import Group, TeamMembership, asm_scoped_groups
+from teams.models import (
+    Group,
+    TeamMembership,
+    asm_scoped_groups,
+    tech_manager_team_ids,
+    technical_sales_team_ids,
+)
 from users.models import User
 
 from .models import Customer, CustomerCreateRequest
@@ -97,6 +103,12 @@ def get_user_team_ids(user):
     if user.role == 'teamlead':
         team_ids.update(Group.objects.filter(teamlead=user).values_list('team_id', flat=True))
 
+    if user.role == 'technical_sales':
+        team_ids.update(technical_sales_team_ids(user))
+
+    if user.role in {'techmgr', 'asst_techmgr'}:
+        team_ids.update(tech_manager_team_ids(user))
+
     return {int(tid) for tid in team_ids if tid}
 
 
@@ -184,6 +196,35 @@ def visible_customers_queryset(user):
         if not visible_ids:
             return Customer.objects.none()
         return Customer.objects.filter(salesperson_id__in=visible_ids)
+
+    if user.role == 'technical_sales':
+        # Singleton/global Technical Sales coverage must not depend on team
+        # memberships being perfectly maintained in the customer owner graph.
+        # If there is only one active Technical Sales user, or this user is
+        # explicitly flagged to cover all technical teams, allow the full
+        # customer list so proposal creation can always reach every customer.
+        if getattr(user, 'handles_all_technical_teams', False) or User.objects.filter(
+            role='technical_sales',
+            is_active=True,
+        ).count() == 1:
+            return Customer.objects.all()
+
+        # Otherwise, Technical Sales handles only the customers owned by the
+        # account managers of the team(s) they cover (Team.technical_sales M2M).
+        # No team -> sees nothing.
+        team_ids = technical_sales_team_ids(user)
+        if not team_ids:
+            return Customer.objects.none()
+        scoped_users = get_team_scoped_users(team_ids, roles=ASSIGNABLE_ROLES)
+        return Customer.objects.filter(salesperson_id__in=scoped_users.values_list('id', flat=True))
+
+    if user.role in {'techmgr', 'asst_techmgr'}:
+        # Technical Manager/Assistant sees the customers of the team(s) they head.
+        team_ids = tech_manager_team_ids(user)
+        if not team_ids:
+            return Customer.objects.none()
+        scoped_users = get_team_scoped_users(team_ids, roles=ASSIGNABLE_ROLES)
+        return Customer.objects.filter(salesperson_id__in=scoped_users.values_list('id', flat=True))
 
     return Customer.objects.none()
 
@@ -367,4 +408,3 @@ def can_approve_request(user, req):
     if not req.requested_by_id:
         return False
     return req.requested_by_id in _managed_requester_ids(user)
-

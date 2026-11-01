@@ -192,6 +192,8 @@ def create_user(request):
         role = request.POST.get('role')
         password = request.POST.get('password')
         is_active = request.POST.get('is_active') == 'on'
+        handles_all_technical_teams = request.POST.get('handles_all_technical_teams') == 'on'
+        ts_approval_exempt = request.POST.get('ts_approval_exempt') == 'on'
         
         # Basic validation
         if not all([username, email, first_name, last_name, role, password]):
@@ -211,7 +213,9 @@ def create_user(request):
                     initials=initials,
                     role=role,
                     password=password,
-                    is_active=is_active
+                    is_active=is_active,
+                    handles_all_technical_teams=handles_all_technical_teams,
+                    ts_approval_exempt=ts_approval_exempt,
                 )
                 messages.success(request, f'User {username} created successfully.')
                 return redirect('user_management')
@@ -239,6 +243,8 @@ def edit_user(request, user_id):
         initials = request.POST.get('initials', '').upper()  # Convert to uppercase
         role = request.POST.get('role')
         is_active = request.POST.get('is_active') == 'on'
+        handles_all_technical_teams = request.POST.get('handles_all_technical_teams') == 'on'
+        ts_approval_exempt = request.POST.get('ts_approval_exempt') == 'on'
         
         # Basic validation
         if not all([username, email, first_name, last_name, role]):
@@ -258,6 +264,8 @@ def edit_user(request, user_id):
                 user_obj.initials = initials
                 user_obj.role = role
                 user_obj.is_active = is_active
+                user_obj.handles_all_technical_teams = handles_all_technical_teams
+                user_obj.ts_approval_exempt = ts_approval_exempt
                 # NOTE: passwords are intentionally NOT set here. Admins reset
                 # passwords via the audited "Send Password Reset Link" action so
                 # no staff member ever knows a user's password. See send_password_reset.

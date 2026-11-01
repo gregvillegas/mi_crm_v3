@@ -15,7 +15,7 @@ from customers.models import Customer
 from sales_funnel.models import SalesFunnel
 from sales_proposals.context_processors import proposal_approval_notifications
 from sales_proposals.forms import ProposalAttachmentForm, ProposalForm, ProposalItemForm
-from sales_proposals.models import Proposal, ProposalApprovalStep, ProposalAttachment, ProposalItem
+from sales_proposals.models import Proposal, ProposalApprovalStep, ProposalAttachment, ProposalApprovalTier, ProposalItem
 from sales_proposals.views import _get_proposal_email_signature_context, update_sales_funnel
 from teams.models import Group, Team, TeamMembership
 
@@ -138,6 +138,32 @@ class ProposalApprovalWorkflowTests(TestCase):
         self.assertEqual(supervisor_context['proposal_approval_notification_count'], 1)
         self.assertEqual(supervisor_context['proposal_approval_notifications'][0]['title'], self.proposal.proposal_number)
 
+    def test_supervisor_created_under_one_million_routes_to_group_sm_manager(self):
+        self.group.requires_sm_approval = True
+        self.group.save(update_fields=['requires_sm_approval'])
+        self.group.sm_managers.add(self.asm)
+        ProposalApprovalTier.objects.create(
+            name='Supervisor Tier',
+            min_amount_php=Decimal('500000.00'),
+            max_amount_php=Decimal('999999.00'),
+            chain='supervisor',
+            order=1,
+            active=True,
+        )
+        proposal = Proposal.objects.create(
+            customer=self.customer,
+            created_by=self.supervisor,
+            subject='Supervisor-owned quote',
+            approval_required=True,
+            approval_total_php=Decimal('732925.00'),
+        )
+
+        chain = proposal.get_approval_chain()
+
+        # SM/ASM approval enabled for this group: the supervisor-authored <1M
+        # proposal stops at the SM/ASM and does NOT escalate to AVP.
+        self.assertEqual([user.username for user in chain], [self.asm.username])
+
         self.step1.status = 'approved'
         self.step1.save(update_fields=['status'])
 
@@ -146,6 +172,74 @@ class ProposalApprovalWorkflowTests(TestCase):
         asm_context = proposal_approval_notifications(asm_request)
         self.assertEqual(asm_context['proposal_approval_notification_count'], 1)
         self.assertEqual(asm_context['proposal_approval_notifications'][0]['title'], self.proposal.proposal_number)
+
+    def test_supervisor_created_under_one_million_without_sm_approval_goes_to_avp(self):
+        ProposalApprovalTier.objects.create(
+            name='Supervisor Tier',
+            min_amount_php=Decimal('500000.00'),
+            max_amount_php=Decimal('999999.00'),
+            chain='supervisor',
+            order=1,
+            active=True,
+        )
+        proposal = Proposal.objects.create(
+            customer=self.customer,
+            created_by=self.supervisor,
+            subject='Supervisor-owned quote without SM approval',
+            approval_required=True,
+            approval_total_php=Decimal('732925.00'),
+        )
+
+        chain = proposal.get_approval_chain()
+
+        # No SM/ASM approval configured for the group: escalate straight to AVP.
+        self.assertEqual([user.username for user in chain], [self.avp.username])
+
+    def test_salesperson_created_under_one_million_routes_to_supervisor(self):
+        ProposalApprovalTier.objects.create(
+            name='Supervisor Tier',
+            min_amount_php=Decimal('500000.00'),
+            max_amount_php=Decimal('999999.00'),
+            chain='supervisor',
+            order=1,
+            active=True,
+        )
+        proposal = Proposal.objects.create(
+            customer=self.customer,
+            created_by=self.salesperson,
+            subject='Salesperson-owned quote under one million',
+            approval_required=True,
+            approval_total_php=Decimal('732925.00'),
+        )
+
+        chain = proposal.get_approval_chain()
+
+        # Salesperson proposals under 1M keep routing to the supervisor.
+        self.assertEqual([user.username for user in chain], [self.supervisor.username])
+
+    def test_avp_created_proposal_does_not_require_approval(self):
+        proposal = Proposal.objects.create(
+            customer=self.customer,
+            created_by=self.avp,
+            subject='AVP-owned quote',
+        )
+        ProposalItem.objects.create(
+            proposal=proposal,
+            part_number='AVP-001',
+            description='Executive quote',
+            quantity=Decimal('1'),
+            unit_cost=Decimal('1000000.00'),
+            unit_price=Decimal('6150000.00'),
+        )
+
+        proposal.calculate_totals()
+        proposal.ensure_approval_chain()
+        proposal.refresh_from_db()
+
+        self.assertFalse(proposal.approval_required)
+        self.assertEqual(proposal.approval_status, 'not_required')
+        self.assertEqual(proposal.approval_steps.count(), 0)
+        self.assertEqual(proposal.get_approval_chain(), [])
 
     def test_tier_escalation_rebuilds_chain_to_level_three(self):
         self.proposal.approval_total_php = Decimal('3951360.00')
@@ -459,6 +553,264 @@ class ProposalPricingWorkflowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Reference #')
         self.assertContains(response, proposal.reference_number)
+
+    def test_technical_sales_proposal_list_hides_approvals_and_tiers_buttons(self):
+        user = User.objects.create_user(
+            username='ts_buttons_user',
+            password='testpass123',
+            role='technical_sales',
+            email='ts-buttons@example.com',
+        )
+
+        self.client.force_login(user)
+        response = self.client.get(reverse('proposal_list'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, 'Approvals')
+        self.assertNotContains(response, 'Tiers')
+        self.assertContains(response, 'New Proposal')
+
+    def test_single_active_technical_sales_can_pick_all_customers_in_proposal_form(self):
+        avp = User.objects.create_user(
+            username='avp_single_ts',
+            password='testpass123',
+            role='avp',
+            email='avp-single-ts@example.com',
+        )
+        asm = User.objects.create_user(
+            username='asm_single_ts',
+            password='testpass123',
+            role='asm',
+            email='asm-single-ts@example.com',
+        )
+        supervisor = User.objects.create_user(
+            username='sup_single_ts',
+            password='testpass123',
+            role='supervisor',
+            email='sup-single-ts@example.com',
+        )
+        techmgr = User.objects.create_user(
+            username='techmgr_single_ts',
+            password='testpass123',
+            role='techmgr',
+            email='techmgr-single-ts@example.com',
+        )
+        technical_sales = User.objects.create_user(
+            username='only_ts_user',
+            password='testpass123',
+            role='technical_sales',
+            email='only-ts@example.com',
+        )
+        team = Team.objects.create(
+            name='Single TS Team',
+            avp=avp,
+            asm=asm,
+            tech_manager=techmgr,
+        )
+        group = Group.objects.create(
+            name='Single TS Group',
+            team=team,
+            supervisor=supervisor,
+        )
+        salesperson = User.objects.create_user(
+            username='single_ts_seller',
+            password='testpass123',
+            role='salesperson',
+            email='single-ts-seller@example.com',
+        )
+        TeamMembership.objects.create(user=salesperson, group=group)
+        customer = Customer.objects.create(
+            company_name='Single TS Visible Customer',
+            contact_person_name='Solo Buyer',
+            email='solo@example.com',
+            salesperson=salesperson,
+        )
+
+        form = ProposalForm(user=technical_sales)
+
+        self.assertIn(customer, form.fields['customer'].queryset)
+
+    def test_handles_all_technical_sales_can_pick_customers_without_team_mapping(self):
+        technical_sales = User.objects.create_user(
+            username='global_ts_user',
+            password='testpass123',
+            role='technical_sales',
+            email='global-ts@example.com',
+            handles_all_technical_teams=True,
+        )
+        salesperson = User.objects.create_user(
+            username='unmapped_seller',
+            password='testpass123',
+            role='salesperson',
+            email='unmapped-seller@example.com',
+        )
+        customer = Customer.objects.create(
+            company_name='Unmapped Customer',
+            contact_person_name='Una Buyer',
+            email='una@example.com',
+            salesperson=salesperson,
+        )
+
+        form = ProposalForm(user=technical_sales)
+
+        self.assertIn(customer, form.fields['customer'].queryset)
+
+    def test_admin_team_filter_includes_technical_sales_proposal_via_tsg_team(self):
+        avp = User.objects.create_user(
+            username='avp_team_filter',
+            password='testpass123',
+            role='avp',
+            email='avp-team-filter@example.com',
+        )
+        asm = User.objects.create_user(
+            username='asm_team_filter',
+            password='testpass123',
+            role='asm',
+            email='asm-team-filter@example.com',
+        )
+        supervisor = User.objects.create_user(
+            username='sup_team_filter',
+            password='testpass123',
+            role='supervisor',
+            email='sup-team-filter@example.com',
+        )
+        techsales = User.objects.create_user(
+            username='ts_team_filter',
+            password='testpass123',
+            role='technical_sales',
+            email='ts-team-filter@example.com',
+            initials='TSG',
+            handles_all_technical_teams=True,
+        )
+        admin = User.objects.create_user(
+            username='admin_team_filter',
+            password='testpass123',
+            role='admin',
+            email='admin-team-filter@example.com',
+        )
+        tsg_team = Team.objects.create(
+            name='TSG',
+            tech_manager=User.objects.create_user(
+                username='techmgr_team_filter',
+                password='testpass123',
+                role='techmgr',
+                email='techmgr-team-filter@example.com',
+            ),
+        )
+        sales_team = Team.objects.create(
+            name='TEAM B',
+            avp=avp,
+            asm=asm,
+        )
+        group = Group.objects.create(
+            name='TEAM B Group',
+            team=sales_team,
+            supervisor=supervisor,
+        )
+        salesperson = User.objects.create_user(
+            username='seller_team_filter',
+            password='testpass123',
+            role='salesperson',
+            email='seller-team-filter@example.com',
+            initials='JLU',
+        )
+        TeamMembership.objects.create(user=salesperson, group=group)
+        customer = Customer.objects.create(
+            company_name='Robinsons Retail Holdings, Inc.',
+            contact_person_name='Retail Buyer',
+            email='retail-proposal@example.com',
+            salesperson=salesperson,
+        )
+        proposal = Proposal.objects.create(
+            customer=customer,
+            created_by=techsales,
+            subject='RAM and SSD requirements',
+        )
+
+        self.client.force_login(admin)
+        response = self.client.get(reverse('proposal_list'), {'team': tsg_team.id})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, proposal.proposal_number)
+        self.assertNotContains(response, 'No proposals found.')
+
+    def test_admin_team_filter_includes_singleton_technical_sales_proposal_via_tsg_team(self):
+        avp = User.objects.create_user(
+            username='avp_singleton_team_filter',
+            password='testpass123',
+            role='avp',
+            email='avp-singleton-team-filter@example.com',
+        )
+        asm = User.objects.create_user(
+            username='asm_singleton_team_filter',
+            password='testpass123',
+            role='asm',
+            email='asm-singleton-team-filter@example.com',
+        )
+        supervisor = User.objects.create_user(
+            username='sup_singleton_team_filter',
+            password='testpass123',
+            role='supervisor',
+            email='sup-singleton-team-filter@example.com',
+        )
+        techsales = User.objects.create_user(
+            username='singleton_ts_team_filter',
+            password='testpass123',
+            role='technical_sales',
+            email='singleton-ts-team-filter@example.com',
+            initials='TSG',
+        )
+        admin = User.objects.create_user(
+            username='admin_singleton_team_filter',
+            password='testpass123',
+            role='admin',
+            email='admin-singleton-team-filter@example.com',
+        )
+        tsg_team = Team.objects.create(
+            name='TSG',
+            tech_manager=User.objects.create_user(
+                username='techmgr_singleton_team_filter',
+                password='testpass123',
+                role='techmgr',
+                email='techmgr-singleton-team-filter@example.com',
+            ),
+        )
+        sales_team = Team.objects.create(
+            name='TEAM B',
+            avp=avp,
+            asm=asm,
+        )
+        group = Group.objects.create(
+            name='TEAM B Group Singleton',
+            team=sales_team,
+            supervisor=supervisor,
+        )
+        salesperson = User.objects.create_user(
+            username='seller_singleton_team_filter',
+            password='testpass123',
+            role='salesperson',
+            email='seller-singleton-team-filter@example.com',
+            initials='JLU',
+        )
+        TeamMembership.objects.create(user=salesperson, group=group)
+        customer = Customer.objects.create(
+            company_name='Singleton TSG Customer',
+            contact_person_name='Retail Buyer',
+            email='singleton-retail-proposal@example.com',
+            salesperson=salesperson,
+        )
+        proposal = Proposal.objects.create(
+            customer=customer,
+            created_by=techsales,
+            subject='Singleton technical sales proposal',
+        )
+
+        self.client.force_login(admin)
+        response = self.client.get(reverse('proposal_list'), {'team': tsg_team.id})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, proposal.proposal_number)
+        self.assertNotContains(response, 'No proposals found.')
 
     def test_reference_number_autogenerate_uses_yyyymmdd_format(self):
         user = User.objects.create_user(

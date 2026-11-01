@@ -87,6 +87,9 @@
                             <th>Contact</th>
                             <th>Email</th>
                             <th>AM</th>
+                            {% if user.role in 'salesperson,supervisor,teamlead,asm,avp,admin,president,gm,vp,technical_sales,techmgr,asst_techmgr' %}
+                            <th class="text-end">Action</th>
+                            {% endif %}
                         </tr>
                     </thead>
                     <tbody>
@@ -96,6 +99,13 @@
                             <td class="small">{{ c.contact_person_name|default:"—" }}</td>
                             <td class="small text-muted">{{ c.email|default:"—" }}</td>
                             <td class="small">{% if c.salesperson %}{{ c.salesperson.initials|default:c.salesperson.username }}{% else %}<span class="text-muted">Unassigned</span>{% endif %}</td>
+                            {% if user.role in 'salesperson,supervisor,teamlead,asm,avp,admin,president,gm,vp,technical_sales,techmgr,asst_techmgr' %}
+                            <td class="text-end">
+                                <a href="{% url 'proposal_create' %}?customer={{ c.pk }}" class="btn btn-sm btn-outline-primary" title="Create a proposal for this customer">
+                                    <i class="fas fa-file-invoice-dollar"></i> Create Proposal
+                                </a>
+                            </td>
+                            {% endif %}
                         </tr>
                         {% endfor %}
                     </tbody>

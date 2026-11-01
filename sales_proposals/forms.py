@@ -31,6 +31,7 @@ class ProposalForm(forms.ModelForm):
             'use_availability_column',
             'hide_part_number',
             'is_test',
+            'offering_type',
             'discount_amount',
             # Bank details (editable)
             # BDO PHP
@@ -78,6 +79,7 @@ class ProposalForm(forms.ModelForm):
             'use_availability_column': 'Show Availability column (uncheck for Warranty)',
             'hide_part_number': 'Hide Part No. column (PDF)',
             'is_test': 'Test proposal (its funnel entry can be deleted later)',
+            'offering_type': 'Technical offering (optional)',
             'discount_amount': 'Discount amount',
         }
         widgets = {
@@ -117,6 +119,12 @@ class ProposalForm(forms.ModelForm):
             groups = Group.objects.filter(team__in=teams)
             sp_ids = TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True)
             qs = qs.filter(Q(salesperson_id__in=sp_ids) | Q(salesperson=self.user))
+        elif role in ['technical_sales', 'techmgr', 'asst_techmgr']:
+            # Technical Sales / Technical Manager may only pick customers of the
+            # team(s) they cover. Reuse the shared customer-visibility helper so
+            # the proposal picker can never drift from the customer list.
+            from customers.permissions import visible_customers_queryset
+            qs = visible_customers_queryset(self.user).filter(is_active=True)
         self.fields['customer'].queryset = qs
         # Render the blank option with no text (instead of "---------") so the
         # searchable Customer control shows only its placeholder, not a dashes row.

@@ -40,14 +40,18 @@
 
     <!-- Primary Actions -->
     <div class="d-flex align-items-center gap-2">
-        {% if user.role != 'salesperson' %}
+        {% if user.role not in 'salesperson,technical_sales' or user.role in 'techmgr,asst_techmgr' %}
         <div class="btn-group" role="group" aria-label="Management actions">
+            {% if user.role not in 'salesperson,technical_sales' or user.role in 'techmgr,asst_techmgr' %}
             <a href="{% url 'approvals_inbox' %}" class="btn btn-sm btn-outline-secondary" title="Approvals Inbox">
                 <i class="fas fa-inbox me-1"></i> Approvals
             </a>
+            {% endif %}
+            {% if user.role in 'admin,president,vp,avp,gm' %}
             <a href="{% url 'approval_tier_list' %}" class="btn btn-sm btn-outline-secondary" title="Approval Tiers">
                 <i class="fas fa-sliders-h me-1"></i> Tiers
             </a>
+            {% endif %}
         </div>
         {% endif %}
         <div class="btn-group" role="group" aria-label="Create proposal">

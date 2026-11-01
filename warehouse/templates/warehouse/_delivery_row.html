@@ -1,0 +1,22 @@
+{# One delivery table row. Shared by the three dashboard sections so the
+   server-rendered markup stays identical to what the WebSocket JS builds. #}
+<tr data-delivery-id="{{ d.id }}"
+    data-so="{{ d.so_number }}"
+    data-plate="{{ d.vehicle_plate|default:'' }}"
+    data-driver="{{ d.driver_staff|default:'' }}"
+    data-status="{{ d.status }}">
+    <td class="fw-semibold text-nowrap">{{ d.so_number }}</td>
+    <td>{{ d.client }}</td>
+    <td>{{ d.item }}</td>
+    <td>{{ d.area|default:'' }}</td>
+    <td>{{ d.driver_staff|default:'' }}</td>
+    <td class="text-nowrap">{{ d.vehicle_plate|default:'' }}</td>
+    <td class="text-center text-nowrap">{{ d.ae }}</td>
+    <td>
+        {% if d.status == 'FOR_SCHEDULE' and d.remarks %}
+            <span class="remarks-urgent">{{ d.remarks }}</span>
+        {% else %}
+            {{ d.remarks|default:'' }}
+        {% endif %}
+    </td>
+</tr>

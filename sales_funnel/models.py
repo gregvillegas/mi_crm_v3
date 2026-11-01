@@ -56,7 +56,7 @@ class SalesFunnel(models.Model):
         User,
         on_delete=models.CASCADE,
         related_name='funnel_entries',
-        limit_choices_to={'role': 'salesperson'},
+        limit_choices_to={'role__in': ['salesperson', 'technical_sales']},
         help_text="Account Manager responsible for this proposal"
     )
     
@@ -100,6 +100,23 @@ class SalesFunnel(models.Model):
         ('won', 'Won'),
         ('lost', 'Lost'),
     ]
+
+    # Technical Sales offering classification (what the deal sells).
+    OFFERING_TYPE_CHOICES = [
+        ('', '---------'),
+        ('parts', 'Parts Sales'),
+        ('services', 'Services'),
+        ('repair', 'Repair'),
+        ('inhouse_support', 'In-house Support'),
+        ('remote_support', 'Remote Support'),
+    ]
+    offering_type = models.CharField(
+        max_length=20,
+        choices=OFFERING_TYPE_CHOICES,
+        blank=True,
+        default='',
+        help_text="Optional classification for Technical Sales deals (parts, services, repair, support)."
+    )
     
     # Status
     is_active = models.BooleanField(

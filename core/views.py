@@ -10,8 +10,6 @@ from django.db.models import Sum, Q
 from django.utils import timezone
 from django.conf import settings
 from datetime import timedelta
-from sales_funnel.models import SalesFunnel
-from teams.models import Team, Group, TeamMembership
 from users.models import User
 from gamification.models import UserMissionProgress
 from gamification.utils import generate_daily_missions, generate_weekly_missions, get_current_week_start
@@ -38,77 +36,13 @@ def home(request):
     
     context['my_missions'] = my_missions
     
-    # Add sales funnel data for eligible users
-    if user.role in ['salesperson', 'supervisor', 'teamlead', 'asm', 'avp', 'admin', 'president', 'gm', 'vp']:
-        # Get funnel entries based on user role
-        if user.role == 'salesperson':
-            funnel_entries = SalesFunnel.objects.filter(
-                salesperson=user,
-                is_active=True,
-                is_closed=False
-            )
-        elif user.role == 'supervisor':
-            # Supervisor can see entries from their groups (members + self)
-            groups = Group.objects.filter(supervisor=user)
-            salespeople_ids = list(TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True))
-            salespeople_ids.append(user.id)
-            funnel_entries = SalesFunnel.objects.filter(
-                salesperson_id__in=salespeople_ids,
-                is_active=True,
-                is_closed=False
-            )
-        elif user.role == 'teamlead':
-            # Teamlead can see entries from their assigned group
-            teamlead_groups = Group.objects.filter(teamlead=user)
-            salespeople_ids = TeamMembership.objects.filter(group__in=teamlead_groups).values_list('user_id', flat=True)
-            funnel_entries = SalesFunnel.objects.filter(
-                salesperson_id__in=salespeople_ids,
-                is_active=True,
-                is_closed=False
-            )
-        elif user.role == 'asm':
-            # ASM can see entries from their teams (salespeople + supervisors + self)
-            asm_teams = user.asm_teams.all()
-            groups = Group.objects.filter(team__in=asm_teams)
-            salespeople_ids = list(TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True))
-            supervisor_ids = list(Group.objects.filter(team__in=asm_teams, supervisor__isnull=False).values_list('supervisor_id', flat=True))
-            visible_ids = salespeople_ids + supervisor_ids
-            funnel_entries = SalesFunnel.objects.filter(
-                Q(salesperson_id__in=visible_ids) | Q(salesperson=user),
-                is_active=True,
-                is_closed=False
-            )
-        elif user.role == 'sm':
-            # SM sees entries from their assigned groups (salespeople + supervisors + self)
-            groups = user.sm_groups.all()
-            salespeople_ids = list(TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True))
-            supervisor_ids = list(Group.objects.filter(id__in=groups.values_list('id', flat=True), supervisor__isnull=False).values_list('supervisor_id', flat=True))
-            visible_ids = salespeople_ids + supervisor_ids
-            funnel_entries = SalesFunnel.objects.filter(
-                Q(salesperson_id__in=visible_ids) | Q(salesperson=user),
-                is_active=True,
-                is_closed=False
-            )
-        elif user.role == 'avp':
-            # AVP can see entries from their teams (salespeople + supervisors + ASMs + SMs)
-            teams = Team.objects.filter(avp=user)
-            groups = Group.objects.filter(team__in=teams)
-            salespeople_ids = list(TeamMembership.objects.filter(group__in=groups).values_list('user_id', flat=True))
-            asm_ids = list(teams.exclude(asm__isnull=True).values_list('asm_id', flat=True))
-            supervisor_ids = list(Group.objects.filter(team__in=teams, supervisor__isnull=False).values_list('supervisor_id', flat=True))
-            sm_ids = list(groups.values_list('sm_managers__id', flat=True))
-            visible_ids = salespeople_ids + asm_ids + supervisor_ids + [i for i in sm_ids if i]
-            funnel_entries = SalesFunnel.objects.filter(
-                Q(salesperson_id__in=visible_ids) | Q(salesperson=user),
-                is_active=True,
-                is_closed=False
-            )
-        else:
-            # Executives and admins can see all entries
-            funnel_entries = SalesFunnel.objects.filter(
-                is_active=True,
-                is_closed=False
-            )
+    # Add sales funnel data for any role allowed to access the funnel module.
+    # Reuse the shared helper so the home page stays in sync with the funnel
+    # dashboard's role scoping, including Technical Sales and Technical Managers.
+    from sales_funnel.views import can_access_funnel, can_add_entry, visible_funnel_entries
+
+    if can_access_funnel(user):
+        funnel_entries = visible_funnel_entries(user)
         
         # Calculate funnel statistics
         funnel_stats = {
@@ -127,7 +61,7 @@ def home(request):
             'funnel_stats': funnel_stats,
             'recent_funnel_entries': recent_entries,
             'show_funnel': True,
-            'can_add_funnel': user.role in ['salesperson', 'supervisor', 'asm', 'avp'],
+            'can_add_funnel': can_add_entry(user),
         })
     
     # ------------------------------------------------------------------
@@ -245,7 +179,6 @@ def global_search(request):
     from customers.permissions import visible_customers_queryset
     from sales_funnel.views import visible_funnel_entries
     from sales_proposals.views import visible_proposals_queryset
-    from customers.models import Customer  # noqa: F401 (kept for clarity)
 
     query = (request.GET.get('q') or '').strip()
     user = request.user

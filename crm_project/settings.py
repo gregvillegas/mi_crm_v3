@@ -20,6 +20,9 @@ ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='127.0.0.1,localhost,10.10.10.12
 # Application definition
 # ---------------------------------------------------------------------------
 INSTALLED_APPS = [
+    # 'daphne' must precede staticfiles so `runserver` serves ASGI
+    # (required for the Warehouse Deliveries WebSocket feed in dev).
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -51,6 +54,7 @@ INSTALLED_APPS = [
     'customer_service',
     'gamification',
     'mass_mailing',
+    'warehouse',
 ]
 
 MIDDLEWARE = [
@@ -89,6 +93,27 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'crm_project.wsgi.application'
+ASGI_APPLICATION = 'crm_project.asgi.application'
+
+# ---------------------------------------------------------------------------
+# Django Channels — real-time WebSocket updates (Warehouse Deliveries)
+# ---------------------------------------------------------------------------
+# Set REDIS_URL in .env (e.g. redis://127.0.0.1:6379/0) when running more than
+# one worker. Without it we fall back to the in-memory layer, which needs no
+# extra service but only works inside a single process (fine for local dev).
+REDIS_URL = config('REDIS_URL', default='')
+
+if REDIS_URL:
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels_redis.core.RedisChannelLayer',
+            'CONFIG': {'hosts': [REDIS_URL]},
+        },
+    }
+else:
+    CHANNEL_LAYERS = {
+        'default': {'BACKEND': 'channels.layers.InMemoryChannelLayer'},
+    }
 
 # ---------------------------------------------------------------------------
 # Database — MariaDB (production) / SQLite (local dev fallback)
