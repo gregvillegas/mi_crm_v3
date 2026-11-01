@@ -1,7 +1,7 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from django.http import HttpResponse
+from django.http import HttpResponse, HttpResponseForbidden
 from .models import Proposal, ProposalItem, ProposalApprovalStep, ProposalApprovalTier, ProposalChangeLog, ProposalEmailLog
 from .forms import ProposalForm, ProposalItemFormSet, ProposalApprovalTierForm, ProposalApprovalTierImportForm, ProposalAttachmentFormSet
 import csv
@@ -524,6 +524,12 @@ def visible_proposals_queryset(user):
         )
         return Proposal.objects.filter(created_by_id__in=ts_ids)
 
+    if user.role == 'warehouse':
+        # Warehouse staff are soft-locked to the warehouse app; they never see
+        # proposals. Explicit so the role cannot fall through to the "see all"
+        # default below.
+        return Proposal.objects.none()
+
     # Admins, VPs, GMs, president see all
     return Proposal.objects.all()
 
@@ -688,6 +694,10 @@ def export_proposals_excel(request):
 
 @login_required
 def proposal_list(request):
+    # Warehouse staff are soft-locked to the warehouse app.
+    if getattr(request.user, 'role', None) == 'warehouse':
+        return HttpResponseForbidden("You don't have permission to access this page.")
+
     proposals = visible_proposals_queryset(request.user)
 
     def _technical_sales_ids_for_team(team_id):

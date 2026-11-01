@@ -699,6 +699,19 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto mb-2 mb-lg-0 align-items-center">
                     {% if user.is_authenticated %}
+                      {% if user.role == 'warehouse' %}
+                        {# Soft lock: warehouse staff see only the warehouse app. #}
+                        <li class="nav-item">
+                            <a class="nav-link" href="{% url 'warehouse:dashboard' %}" title="Warehouse Deliveries">
+                                <i class="fas fa-truck-fast"></i><span>Deliveries</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{% url 'warehouse:history' %}" title="Delivery History">
+                                <i class="fas fa-clock-rotate-left"></i><span>History</span>
+                            </a>
+                        </li>
+                      {% else %}
                       {% if user.role in 'avp,admin,president,gm,vp,salesperson,supervisor,teamlead,asm,marketing,technical_sales,techmgr,asst_techmgr' %}
                        <li class="nav-item">
                            <a class="nav-link" href="{% url 'customer_list' %}" title="Customers">
@@ -880,9 +893,10 @@
                                 </a>
                             </li>
                         {% endif %}
+                      {% endif %}
                     {% endif %}
                 </ul>
-                {% if user.is_authenticated %}
+                {% if user.is_authenticated and user.role != 'warehouse' %}
                 <form class="nav-global-search d-flex mx-lg-3 my-2 my-lg-0" method="get" action="{% url 'global_search' %}" role="search">
                     <div class="nav-search-wrap">
                         <i class="fas fa-search nav-search-icon"></i>
@@ -1066,6 +1080,10 @@
 
     <!-- Thumb-zone bottom tab bar (mobile only). Mirrors real nav destinations. -->
     <nav class="m-tabbar" id="mTabbar" aria-label="Primary">
+        {% if user.role == 'warehouse' %}
+        <a class="m-tabbar__item" href="{% url 'warehouse:dashboard' %}"><i class="fas fa-truck-fast"></i><span>Deliveries</span></a>
+        <a class="m-tabbar__item" href="{% url 'warehouse:history' %}"><i class="fas fa-clock-rotate-left"></i><span>History</span></a>
+        {% else %}
         {% if user.role in 'avp,admin,president,gm,vp,salesperson,supervisor,teamlead,asm,marketing,technical_sales,techmgr,asst_techmgr' %}
         <a class="m-tabbar__item" href="{% url 'customer_list' %}"><i class="fas fa-users"></i><span>Customers</span></a>
         {% endif %}
@@ -1077,6 +1095,7 @@
         {% endif %}
         {% if user.role in 'salesperson,avp,supervisor,teamlead,asm,admin,president,gm,vp,technical_sales,techmgr,asst_techmgr' %}
         <a class="m-tabbar__item" href="{% url 'sales_monitoring:dashboard' %}"><i class="fas fa-desktop"></i><span>Monitor</span></a>
+        {% endif %}
         {% endif %}
         <a class="m-tabbar__item" href="{% url 'profile' %}"><i class="fas fa-user-circle"></i><span>Me</span></a>
     </nav>

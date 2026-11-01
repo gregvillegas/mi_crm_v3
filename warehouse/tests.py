@@ -6,7 +6,7 @@ from django.utils import timezone
 
 from users.models import User
 
-from .models import Delivery
+from .models import Delivery, WarehouseStaff
 
 
 class DeliveryModelTests(TestCase):
@@ -96,6 +96,19 @@ class DeliveryDashboardViewTests(TestCase):
             role='marketing',
             email='wh_marketing@example.com',
         )
+        self.warehouse_user = User.objects.create_user(
+            username='wh_office',
+            password='testpass123',
+            role='warehouse',
+            email='wh_office@example.com',
+        )
+        self.supervisor = User.objects.create_user(
+            username='wh_sup',
+            password='testpass123',
+            role='supervisor',
+            email='wh_sup@example.com',
+        )
+        self.warehouse_staff = WarehouseStaff.objects.create(name='R. Santos')
 
         today = timezone.localdate()
         Delivery.objects.create(
@@ -113,6 +126,7 @@ class DeliveryDashboardViewTests(TestCase):
             so_number='S.O. 2003', client='Gamma Co', item='Laptop',
             area='Taguig', ae='CSV', status=Delivery.STATUS_ACCOMPLISHED,
             accomplished_date=today - timedelta(days=1),
+            driver_staff='J. Cruz', warehouse_staff=self.warehouse_staff,
         )
 
     def test_dashboard_requires_login(self):
@@ -171,7 +185,7 @@ class DeliveryDashboardViewTests(TestCase):
         self.assertContains(response, 'S.O. 2004')
 
     def test_export_returns_xlsx_attachment(self):
-        self.client.force_login(self.user)
+        self.client.force_login(self.supervisor)
 
         response = self.client.get(reverse('warehouse:export'))
 
@@ -182,9 +196,200 @@ class DeliveryDashboardViewTests(TestCase):
         )
         self.assertIn('attachment; filename="deliveries_', response['Content-Disposition'])
 
+    def test_export_forbidden_for_salesperson(self):
+        # The Account Manager role may read the board but not export it.
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('warehouse:export'))
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_export_allowed_for_warehouse_role(self):
+        self.client.force_login(self.warehouse_user)
+
+        response = self.client.get(reverse('warehouse:export'))
+
+        self.assertEqual(response.status_code, 200)
+
     def test_export_forbidden_for_role_outside_monitoring_gate(self):
         self.client.force_login(self.outsider)
 
         response = self.client.get(reverse('warehouse:export'))
 
         self.assertEqual(response.status_code, 403)
+
+
+class DeliveryEditViewTests(TestCase):
+    """Add / update access rules for the warehouse office role."""
+
+    def setUp(self):
+        self.warehouse_user = User.objects.create_user(
+            username='wh_editor', password='testpass123', role='warehouse',
+            email='wh_editor@example.com',
+        )
+        self.salesperson = User.objects.create_user(
+            username='wh_reader', password='testpass123', role='salesperson',
+            email='wh_reader@example.com',
+        )
+        self.staff = WarehouseStaff.objects.create(name='M. Reyes')
+        self.delivery = Delivery.objects.create(
+            so_number='S.O. 4001', client='Acme Corp', item='Switch',
+            area='Makati', ae='CSV', status=Delivery.STATUS_FOR_SCHEDULE,
+        )
+
+    def test_warehouse_role_can_create_delivery(self):
+        self.client.force_login(self.warehouse_user)
+
+        response = self.client.post(reverse('warehouse:create'), {
+            'so_number': 'S.O. 4002',
+            'client': 'New Client',
+            'item': 'Router',
+            'area': 'Pasig',
+            'ae': 'MGA',
+            'warehouse_staff': self.staff.pk,
+            'status': Delivery.STATUS_FOR_SCHEDULE,
+        })
+
+        self.assertRedirects(response, reverse('warehouse:dashboard'))
+        self.assertTrue(Delivery.objects.filter(so_number='S.O. 4002').exists())
+
+    def test_warehouse_role_can_update_delivery(self):
+        self.client.force_login(self.warehouse_user)
+
+        response = self.client.post(
+            reverse('warehouse:update', args=[self.delivery.pk]),
+            {
+                'so_number': self.delivery.so_number,
+                'client': self.delivery.client,
+                'item': self.delivery.item,
+                'area': self.delivery.area,
+                'ae': self.delivery.ae,
+                'warehouse_staff': self.staff.pk,
+                'status': Delivery.STATUS_ACCOMPLISHED,
+            },
+        )
+
+        self.assertRedirects(response, reverse('warehouse:dashboard'))
+        self.delivery.refresh_from_db()
+        self.assertEqual(self.delivery.status, Delivery.STATUS_ACCOMPLISHED)
+        self.assertEqual(self.delivery.warehouse_staff, self.staff)
+
+    def test_salesperson_cannot_create_delivery(self):
+        self.client.force_login(self.salesperson)
+
+        response = self.client.get(reverse('warehouse:create'))
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_salesperson_cannot_update_delivery(self):
+        self.client.force_login(self.salesperson)
+
+        response = self.client.get(reverse('warehouse:update', args=[self.delivery.pk]))
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_warehouse_role_sees_edit_and_create_controls(self):
+        self.client.force_login(self.warehouse_user)
+
+        response = self.client.get(reverse('warehouse:dashboard'))
+
+        self.assertContains(response, 'data-can-edit="1"')
+        self.assertContains(response, reverse('warehouse:create'))
+        self.assertContains(
+            response, reverse('warehouse:update', args=[self.delivery.pk])
+        )
+
+    def test_reader_role_does_not_see_edit_controls(self):
+        self.client.force_login(self.salesperson)
+
+        response = self.client.get(reverse('warehouse:dashboard'))
+
+        self.assertContains(response, 'data-can-edit="0"')
+        self.assertNotContains(response, '>New Delivery<')
+
+
+class DeliveryHistoryViewTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='wh_hist', password='testpass123', role='salesperson',
+            email='wh_hist@example.com',
+        )
+        self.staff = WarehouseStaff.objects.create(name='L. Bautista')
+        Delivery.objects.create(
+            so_number='S.O. 5001', client='Done Corp', item='Printer',
+            area='Makati', ae='CSV', status=Delivery.STATUS_ACCOMPLISHED,
+            driver_staff='J. Cruz', warehouse_staff=self.staff,
+        )
+        Delivery.objects.create(
+            so_number='S.O. 5002', client='Pending Corp', item='Scanner',
+            area='Pasig', ae='MGA', status=Delivery.STATUS_FOR_SCHEDULE,
+        )
+
+    def test_history_requires_login(self):
+        response = self.client.get(reverse('warehouse:history'))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('/accounts/login/', response['Location'])
+
+    def test_history_lists_only_completed_deliveries(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('warehouse:history'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Done Corp')
+        self.assertContains(response, 'Printer')
+        self.assertContains(response, 'J. Cruz')
+        self.assertContains(response, 'L. Bautista')
+        self.assertNotContains(response, 'Pending Corp')
+
+    def test_history_forbidden_for_role_outside_monitoring_gate(self):
+        outsider = User.objects.create_user(
+            username='wh_hist_out', password='testpass123', role='marketing',
+            email='wh_hist_out@example.com',
+        )
+        self.client.force_login(outsider)
+
+        response = self.client.get(reverse('warehouse:history'))
+
+        self.assertEqual(response.status_code, 403)
+
+
+class WarehouseSoftLockTests(TestCase):
+    """Warehouse staff are restricted to the warehouse app."""
+
+    def setUp(self):
+        self.warehouse_user = User.objects.create_user(
+            username='wh_lock', password='testpass123', role='warehouse',
+            email='wh_lock@example.com',
+        )
+
+    def test_home_redirects_warehouse_to_delivery_board(self):
+        self.client.force_login(self.warehouse_user)
+
+        response = self.client.get(reverse('home'))
+
+        self.assertRedirects(response, reverse('warehouse:dashboard'))
+
+    def test_sales_monitoring_dashboard_forbidden_for_warehouse(self):
+        self.client.force_login(self.warehouse_user)
+
+        response = self.client.get(reverse('sales_monitoring:dashboard'))
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_proposal_list_forbidden_for_warehouse(self):
+        self.client.force_login(self.warehouse_user)
+
+        response = self.client.get(reverse('proposal_list'))
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_navbar_hides_other_modules_for_warehouse(self):
+        self.client.force_login(self.warehouse_user)
+
+        response = self.client.get(reverse('warehouse:dashboard'))
+
+        self.assertContains(response, reverse('warehouse:dashboard'))
+        self.assertNotContains(response, 'Company Shared')
+        self.assertNotContains(response, 'Mass Mailing')

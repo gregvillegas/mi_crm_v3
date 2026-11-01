@@ -15,6 +15,16 @@
     .delivery-table tr.row-flash td { background-color: #d4f8d4 !important; }
 
     .van-details { background-color: #fffbe6; }
+    
+    .card-header input[type="date"] {
+        border: 1px solid rgba(0,0,0,0.1);
+        border-radius: 4px;
+        padding: 1px 6px;
+        font-size: 0.875rem;
+        background-color: rgba(255,255,255,0.8);
+    }
+    .section-yellow input[type="date"] { background-color: #fff; color: #3b2f00; }
+    .section-green input[type="date"] { background-color: #fff; color: #155724; }
 </style>
 
 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
@@ -26,12 +36,24 @@
                    class="form-control form-control-sm" aria-label="Delivery date">
             <button class="btn btn-sm btn-outline-secondary" type="submit">Go</button>
         </form>
-        <a href="{% url 'warehouse:export' %}?date={{ selected_date|date:'Y-m-d' }}"
-           class="btn btn-sm btn-success">
-            <i class="fas fa-file-excel"></i> Export Excel
+        <a href="{% url 'warehouse:history' %}" class="btn btn-sm btn-outline-primary">
+            <i class="fas fa-clock-rotate-left"></i> Delivery History
         </a>
+        {% if can_edit %}
+            <a href="{% url 'warehouse:create' %}" class="btn btn-sm btn-primary">
+                <i class="fas fa-plus"></i> New Delivery
+            </a>
+        {% endif %}
+        {% if can_export %}
+            <a href="{% url 'warehouse:export' %}?date={{ selected_date|date:'Y-m-d' }}"
+               class="btn btn-sm btn-success">
+                <i class="fas fa-file-excel"></i> Export Excel
+            </a>
+        {% endif %}
     </div>
 </div>
+
+<div id="delivery-board" data-can-edit="{% if can_edit %}1{% else %}0{% endif %}">
 
 {# ---------------- Section 1: FOR SCHEDULE ---------------- #}
 <div class="card mb-4">
@@ -53,6 +75,7 @@
                     <th>VEHICLE PLATE</th>
                     <th class="text-center">AE</th>
                     <th>REMARKS</th>
+                    {% if can_edit %}<th class="text-end">ACTION</th>{% endif %}
                 </tr>
             </thead>
             <tbody id="tbody-for-schedule">
@@ -60,7 +83,7 @@
                     {% include 'warehouse/_delivery_row.html' %}
                 {% empty %}
                     <tr class="empty-row">
-                        <td colspan="8" class="text-center text-muted py-3">No records</td>
+                        <td colspan="{% if can_edit %}9{% else %}8{% endif %}" class="text-center text-muted py-3">No records</td>
                     </tr>
                 {% endfor %}
             </tbody>
@@ -73,7 +96,9 @@
     <div class="card-header section-yellow d-flex justify-content-between align-items-center">
         <span>
             <i class="fas fa-clipboard-check me-1"></i> SCHEDULED DELIVERY
-            <span class="fw-normal ms-2">{{ selected_date|date:"F d, Y" }}</span>
+            <input type="date" value="{{ selected_date|date:'Y-m-d' }}" 
+                   class="ms-2 section-date-picker" data-target-offset="0"
+                   onchange="window.location.href='?date=' + this.value">
         </span>
         <span class="badge bg-light text-dark" data-count-for="SCHEDULED">
             {{ scheduled|length }} item(s)
@@ -91,6 +116,7 @@
                     <th>VEHICLE PLATE</th>
                     <th class="text-center">AE</th>
                     <th>REMARKS</th>
+                    {% if can_edit %}<th class="text-end">ACTION</th>{% endif %}
                 </tr>
             </thead>
             <tbody id="tbody-scheduled">
@@ -98,7 +124,7 @@
                     {% include 'warehouse/_delivery_row.html' %}
                 {% empty %}
                     <tr class="empty-row">
-                        <td colspan="8" class="text-center text-muted py-3">No records</td>
+                        <td colspan="{% if can_edit %}9{% else %}8{% endif %}" class="text-center text-muted py-3">No records</td>
                     </tr>
                 {% endfor %}
             </tbody>
@@ -113,7 +139,6 @@
                         <th>VEHICLE PLATE</th>
                         <th>DRIVER / STAFF</th>
                         <th class="text-end">ITEMS</th>
-                        <th>SO NUMBERS</th>
                     </tr>
                 </thead>
                 <tbody id="van-details-body">
@@ -122,11 +147,10 @@
                             <td class="fw-semibold">{{ van.vehicle_plate|default:'—' }}</td>
                             <td>{{ van.driver_staff|default:'—' }}</td>
                             <td class="text-end">{{ van.count }}</td>
-                            <td class="text-muted small">{{ van.so_numbers|join:', ' }}</td>
                         </tr>
                     {% empty %}
                         <tr class="empty-row">
-                            <td colspan="4" class="text-muted">No vehicles assigned yet.</td>
+                            <td colspan="3" class="text-muted">No vehicles assigned yet.</td>
                         </tr>
                     {% endfor %}
                 </tbody>
@@ -140,7 +164,9 @@
     <div class="card-header section-green d-flex justify-content-between align-items-center">
         <span>
             <i class="fas fa-circle-check me-1"></i> ACCOMPLISHED DELIVERY
-            <span class="fw-normal ms-2">{{ accomplished_date|date:"F d, Y" }}</span>
+            <input type="date" value="{{ accomplished_date|date:'Y-m-d' }}"
+                   class="ms-2 section-date-picker"
+                   onchange="var d = new Date(this.value); d.setDate(d.getDate() + 1); window.location.href='?date=' + d.toISOString().split('T')[0]">
         </span>
         <span class="badge bg-light text-dark" data-count-for="ACCOMPLISHED">
             {{ accomplished|length }} item(s)
@@ -158,6 +184,7 @@
                     <th>VEHICLE PLATE</th>
                     <th class="text-center">AE</th>
                     <th>REMARKS</th>
+                    {% if can_edit %}<th class="text-end">ACTION</th>{% endif %}
                 </tr>
             </thead>
             <tbody id="tbody-accomplished">
@@ -165,7 +192,7 @@
                     {% include 'warehouse/_delivery_row.html' %}
                 {% empty %}
                     <tr class="empty-row">
-                        <td colspan="8" class="text-center text-muted py-3">No records</td>
+                        <td colspan="{% if can_edit %}9{% else %}8{% endif %}" class="text-center text-muted py-3">No records</td>
                     </tr>
                 {% endfor %}
             </tbody>
@@ -187,7 +214,11 @@
         SCHEDULED: 'tbody-scheduled',
         ACCOMPLISHED: 'tbody-accomplished'
     };
-    var COLUMN_COUNT = 8;
+    // The ACTION column is only rendered for editors (warehouse office / admin).
+    var board = document.getElementById('delivery-board');
+    var CAN_EDIT = !!(board && board.dataset.canEdit === '1');
+    var EDIT_URL_TEMPLATE = '{% url "warehouse:update" 0 %}';
+    var COLUMN_COUNT = CAN_EDIT ? 9 : 8;
     var RECONNECT_MS = 3000;
     var FLASH_MS = 1500;
 
@@ -211,11 +242,26 @@
         tr.dataset.driver = d.driver_staff || '';
         tr.dataset.status = d.status;
 
-        tr.appendChild(makeCell(d.so_number, 'fw-semibold text-nowrap'));
+        var soCell = makeCell(d.so_number, 'fw-semibold text-nowrap');
+        if (d.is_backlog) {
+            var badge = document.createElement('span');
+            badge.className = 'badge bg-danger ms-1';
+            badge.title = 'Backlog (moved back ' + d.backlog_count + ' times)';
+            badge.textContent = 'BACKLOG';
+            soCell.appendChild(badge);
+        }
+        tr.appendChild(soCell);
+
         tr.appendChild(makeCell(d.client));
         tr.appendChild(makeCell(d.item));
         tr.appendChild(makeCell(d.area));
-        tr.appendChild(makeCell(d.driver_staff));
+
+        var driverDisplay = d.driver_staff || '';
+        if (d.warehouse_staff) {
+            driverDisplay += (driverDisplay ? ' - ' : '') + d.warehouse_staff;
+        }
+        tr.appendChild(makeCell(driverDisplay));
+
         tr.appendChild(makeCell(d.vehicle_plate, 'text-nowrap'));
         tr.appendChild(makeCell(d.ae, 'text-center text-nowrap'));
 
@@ -230,6 +276,18 @@
             remarks.textContent = d.remarks || '';
         }
         tr.appendChild(remarks);
+
+        if (CAN_EDIT) {
+            var action = document.createElement('td');
+            action.className = 'text-end';
+            var link = document.createElement('a');
+            link.href = EDIT_URL_TEMPLATE.replace('/0/', '/' + d.id + '/');
+            link.className = 'btn btn-sm btn-outline-secondary';
+            link.title = 'Edit ' + d.so_number;
+            link.innerHTML = '<i class="fas fa-pen"></i>';
+            action.appendChild(link);
+            tr.appendChild(action);
+        }
 
         return tr;
     }
@@ -300,7 +358,7 @@
             var empty = document.createElement('tr');
             empty.className = 'empty-row';
             var emptyCell = document.createElement('td');
-            emptyCell.colSpan = 4;
+            emptyCell.colSpan = 3;
             emptyCell.className = 'text-muted';
             emptyCell.textContent = 'No vehicles assigned yet.';
             empty.appendChild(emptyCell);
@@ -316,7 +374,6 @@
             tr.appendChild(makeCell(van.plate || '—', 'fw-semibold'));
             tr.appendChild(makeCell(van.driver || '—'));
             tr.appendChild(makeCell(String(van.count), 'text-end'));
-            tr.appendChild(makeCell(van.so.join(', '), 'text-muted small'));
             body.appendChild(tr);
         });
     }

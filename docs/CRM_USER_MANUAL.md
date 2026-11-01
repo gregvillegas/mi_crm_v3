@@ -25,6 +25,7 @@
    - [Gamification](#gamification)
    - [Customer Service](#customer-service)
    - [File Sharing](#file-sharing)
+   - [Warehouse & Deliveries](#warehouse--deliveries)
 5. [Analytics & Reporting](#analytics--reporting)
 6. [Administration](#administration)
 
@@ -61,7 +62,9 @@ The system is tailored to different roles within the organization:
 - **ASM (Area Sales Manager)**: Manage multiple groups/teams, set quotas.
 - **AVP (Assistant Vice President)**: Strategic oversight of teams and quotas.
 - **Executive (VP/GM/President)**: Full view of company performance and analytics.
+- **Technical Sales / Technical Manager**: Manage TSG customers, funnel, and proposals in covered teams.
 - **Marketing**: Manages reusable campaign media assets for Mass Mailing.
+- **Warehouse**: Maintains the delivery itinerary board (add/update deliveries); sees only the Warehouse module.
 - **Admin**: System configuration and user management.
 
 ### Navigation
@@ -77,6 +80,7 @@ The top navigation bar provides quick access to all major modules:
 - **Teams**: (For Managers) Team structure and quotas.
 - **Mass Mailing**: Send personalized bulk emails to clients.
 - **Files**: Document repository.
+- **Warehouse Deliveries**: (Under Monitoring) Delivery itinerary board, history, and Excel export.
 
 ***
 
@@ -298,6 +302,18 @@ The Mass Mailing module allows salespersons to send personalized bulk emails to 
 
 - **Repository**: Upload and share important documents (brochures, price lists, forms).
 - **Permissions**: Control who can view or download specific files.
+
+### Warehouse & Deliveries
+
+- **Itinerary Board**: Three stacked sections — **For Schedule**, **Scheduled Delivery**, and **Accomplished Delivery** — each with a date picker. Remarks for "For Schedule" items are shown in bold red. A **VAN DETAILS** footer groups the day's items by vehicle plate and driver.
+- **Real-Time Updates**: Changes appear instantly on every open board (no refresh needed).
+- **Add / Update**: The **Warehouse** role sees a **New Delivery** button and a per-row **edit** link to maintain the itinerary (drivers, plates, warehouse staff, status).
+- **Delivery History**: A paginated log of all scheduled, accomplished, and **backlog** items with columns Date, Status, Company, Item, AE, Driver, and Warehouse Staff — useful for driver/staff KPI and backlog tracing.
+- **Backlog Tracing**: When an item is moved back from Scheduled/Accomplished to For Schedule, it is flagged **BACKLOG** (with a move count) so recurring delays are recorded.
+- **Excel Export**: Download the board as a workbook with one sheet per section. Export is available to all viewers **except** the Account Manager (salesperson) role.
+- **Warehouse role access**: Warehouse users are soft-locked to this module — their navbar shows only Warehouse Deliveries and Delivery History.
+
+> Full technical details are in [WAREHOUSE_APP.md](WAREHOUSE_APP.md).
 
 ***
 

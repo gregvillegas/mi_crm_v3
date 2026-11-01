@@ -218,7 +218,12 @@ def _build_group_fiscal_summary_pdf(summary):
 def dashboard(request):
     """Main dashboard for sales activity monitoring"""
     user = request.user
-    
+
+    # Warehouse staff are soft-locked to the warehouse app. Without this the
+    # role would fall through to the admin dashboard below.
+    if user.role == 'warehouse':
+        return HttpResponseForbidden("You don't have permission to access this page.")
+
     if user.role in ['supervisor', 'asm', 'sm', 'teamlead']:
         return supervisor_dashboard(request)
     elif user.role in ['salesperson', 'technical_sales']:

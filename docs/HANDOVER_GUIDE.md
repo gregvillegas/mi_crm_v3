@@ -87,6 +87,7 @@ mi_crm/
 ├── gamification/           # Leaderboard, badges, missions
 ├── mass_mailing/           # Email campaign builder
 ├── customer_service/       # Redmine-integrated support tickets
+├── warehouse/              # Delivery itinerary board (Channels WebSocket, Excel export, history)
 │
 ├── templates/              # All HTML templates
 ├── static/                 # Source static files (CSS, JS, images)
@@ -123,6 +124,8 @@ The system uses a custom `role` field on the User model. Each role has different
 | `marketing` | Marketing | Mass mailing, lead sources, campaigns |
 | `techmgr` | Technical Manager | TSG group management |
 | `asst_techmgr` | Asst. Technical Manager | TSG group support |
+| `technical_sales` | Technical Sales | TSG customers/funnel/proposals in their covered teams |
+| `warehouse` | Warehouse | Delivery itinerary board only (add/update deliveries; soft-locked to the warehouse app) |
 
 **MFA (Two-Factor Authentication)** is enabled for all users via TOTP (Time-based One-Time Password using apps like Google Authenticator or Authy).
 
@@ -195,6 +198,15 @@ The system uses a custom `role` field on the User model. Each role has different
 - Integrated with Redmine ticketing system
 - Create support tickets directly from a customer's profile
 - Ticket status sync from Redmine
+
+### Warehouse Deliveries (`/warehouse/`)
+- Daily delivery itinerary board: **For Schedule**, **Scheduled Delivery**, **Accomplished Delivery**, and a **VAN DETAILS** footer (grouped by vehicle plate + driver)
+- Real-time updates over WebSocket (Django Channels) — changes appear on every open board without a refresh
+- **Warehouse** role adds/updates deliveries; the role is soft-locked to this module
+- **Delivery History** page (date, status, company, item, AE, driver, warehouse staff) with **backlog tracing**
+- Excel export (one sheet per section) — available to all viewers except the Account Manager (salesperson) role
+- Managed in Django admin: `WarehouseStaff` (dropdown list, no login) and `Delivery` (inline status/driver/plate editing)
+- One-off legacy seed: `python manage.py import_warehouse_itinerary`
 
 ### REST API (`/api/v1/`)
 - Token-based authentication

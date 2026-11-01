@@ -207,6 +207,11 @@ def funnel_scope_q(user):
         # authored by the Technical Sales staff covering the team(s) they head.
         ts_ids = list(technical_sales_users_for_teams(tech_manager_team_ids(user)).values_list('id', flat=True))
         return Q(salesperson_id__in=ts_ids, proposal__created_by_id__in=ts_ids)
+    if user.role == 'warehouse':
+        # Warehouse staff are soft-locked to the warehouse app; they see no
+        # funnel entries. Explicit so the role cannot fall through to the
+        # unrestricted default below.
+        return Q(pk__in=[])
     # Executives and admins can see all entries
     return None
 

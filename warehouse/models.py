@@ -2,6 +2,29 @@ from django.db import models
 from django.utils import timezone
 
 
+class WarehouseStaff(models.Model):
+    """
+    A warehouse person who can be credited on a delivery.
+
+    Deliberately not a User account: drivers and helpers do not log in, they
+    only need to appear in the "warehouse staff" dropdown and history report.
+    """
+
+    name = models.CharField(max_length=120, unique=True)
+    is_active = models.BooleanField(
+        default=True,
+        help_text='Uncheck to hide from the dropdown without losing history.',
+    )
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Warehouse Staff'
+        verbose_name_plural = 'Warehouse Staff'
+
+    def __str__(self):
+        return self.name
+
+
 class DeliveryQuerySet(models.QuerySet):
     """Section helpers for the three-table delivery dashboard."""
 
@@ -16,6 +39,18 @@ class DeliveryQuerySet(models.QuerySet):
     def accomplished_on(self, day):
         """Section 3 — deliveries completed on the given day."""
         return self.filter(status=Delivery.STATUS_ACCOMPLISHED, accomplished_date=day)
+
+    def delivery_history(self):
+        """
+        All scheduled or completed deliveries, plus any backlog items, newest first.
+        """
+        return (
+            self.exclude(
+                models.Q(status=Delivery.STATUS_FOR_SCHEDULE) & models.Q(is_backlog=False)
+            )
+            .select_related('warehouse_staff')
+            .order_by('-scheduled_date', '-accomplished_date', 'so_number')
+        )
 
 
 class Delivery(models.Model):
@@ -55,6 +90,14 @@ class Delivery(models.Model):
         null=True,
         verbose_name='Vehicle Plate',
     )
+    warehouse_staff = models.ForeignKey(
+        WarehouseStaff,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='deliveries',
+        verbose_name='Warehouse Staff',
+    )
     ae = models.CharField(
         max_length=20,
         verbose_name='AE',
@@ -67,6 +110,8 @@ class Delivery(models.Model):
         default=STATUS_FOR_SCHEDULE,
         db_index=True,
     )
+    is_backlog = models.BooleanField(default=False, db_index=True)
+    backlog_count = models.PositiveIntegerField(default=0)
     scheduled_date = models.DateField(null=True, blank=True)
     accomplished_date = models.DateField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -82,8 +127,19 @@ class Delivery(models.Model):
         return f'{self.so_number} — {self.client}'
 
     def save(self, *args, **kwargs):
-        """Stamp the workflow date as the row moves through the board."""
+        """Stamp the workflow date and detect backlog transitions."""
         today = timezone.localdate()
+
+        if self.pk:
+            old_instance = Delivery.objects.get(pk=self.pk)
+            # If moving from Scheduled/Accomplished back to For Schedule, mark as backlog.
+            if (
+                old_instance.status != self.STATUS_FOR_SCHEDULE
+                and self.status == self.STATUS_FOR_SCHEDULE
+            ):
+                self.is_backlog = True
+                self.backlog_count += 1
+
         if self.status == self.STATUS_SCHEDULED and not self.scheduled_date:
             self.scheduled_date = today
         if self.status == self.STATUS_ACCOMPLISHED and not self.accomplished_date:
@@ -93,6 +149,10 @@ class Delivery(models.Model):
     @property
     def is_for_schedule(self):
         return self.status == self.STATUS_FOR_SCHEDULE
+
+    @property
+    def warehouse_staff_name(self):
+        return self.warehouse_staff.name if self.warehouse_staff else ''
 
     def to_dict(self):
         """JSON-ready payload used by the WebSocket feed."""
@@ -104,9 +164,12 @@ class Delivery(models.Model):
             'area': self.area or '',
             'driver_staff': self.driver_staff or '',
             'vehicle_plate': self.vehicle_plate or '',
+            'warehouse_staff': self.warehouse_staff_name,
             'ae': self.ae,
             'remarks': self.remarks or '',
             'status': self.status,
+            'is_backlog': self.is_backlog,
+            'backlog_count': self.backlog_count,
             'scheduled_date': self.scheduled_date.isoformat() if self.scheduled_date else '',
             'accomplished_date': (
                 self.accomplished_date.isoformat() if self.accomplished_date else ''

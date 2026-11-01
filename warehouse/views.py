@@ -1,11 +1,14 @@
 from datetime import timedelta
 
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core.paginator import Paginator
 from django.http import HttpResponse, HttpResponseForbidden
-from django.shortcuts import render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 
+from .forms import DeliveryForm
 from .models import Delivery
 
 # Column layout shared by the dashboard tables and the Excel export so the two
@@ -26,11 +29,33 @@ DELIVERY_COLUMNS = [
 DELIVERY_VIEWER_ROLES = {
     'salesperson', 'avp', 'supervisor', 'teamlead', 'asm', 'admin',
     'president', 'gm', 'vp', 'technical_sales', 'techmgr', 'asst_techmgr',
+    'warehouse',
 }
+
+# The Account Manager (salesperson) role may read the board but not export it.
+DELIVERY_EXPORT_EXCLUDED_ROLES = {'salesperson'}
+
+# Only the warehouse office role (and admins) may add or change deliveries.
+DELIVERY_EDITOR_ROLES = {'warehouse', 'admin'}
+
+HISTORY_PAGE_SIZE = 50
 
 
 def _can_view_deliveries(user):
     return getattr(user, 'role', None) in DELIVERY_VIEWER_ROLES
+
+
+def can_export_deliveries(user):
+    """Everyone who can view the board, except the Account Manager role."""
+    return (
+        _can_view_deliveries(user)
+        and getattr(user, 'role', None) not in DELIVERY_EXPORT_EXCLUDED_ROLES
+    )
+
+
+def can_edit_deliveries(user):
+    """The warehouse office role owns the itinerary; admins keep a way in too."""
+    return getattr(user, 'role', None) in DELIVERY_EDITOR_ROLES
 
 
 def _selected_date(request):
@@ -97,8 +122,82 @@ def delivery_dashboard(request):
         'scheduled': data['scheduled'],
         'accomplished': data['accomplished'],
         'van_details': _build_van_details(data['scheduled']),
+        'can_edit': can_edit_deliveries(request.user),
+        'can_export': can_export_deliveries(request.user),
     }
     return render(request, 'warehouse/delivery_dashboard.html', context)
+
+
+@login_required
+def delivery_history(request):
+    """Past deliveries (Scheduled or Accomplished) for reporting/KPI."""
+    if not _can_view_deliveries(request.user):
+        return HttpResponseForbidden("You don't have access to the warehouse logs.")
+
+    queryset = Delivery.objects.delivery_history()
+    paginator = Paginator(queryset, HISTORY_PAGE_SIZE)
+
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
+    return render(
+        request,
+        'warehouse/delivery_history.html',
+        {
+            'page_obj': page_obj,
+            'total_count': queryset.count(),
+        },
+    )
+
+
+@login_required
+def delivery_create(request):
+    """Add a delivery to the itinerary."""
+    if not can_edit_deliveries(request.user):
+        return HttpResponseForbidden(
+            "You don't have permission to add warehouse deliveries."
+        )
+
+    if request.method == 'POST':
+        form = DeliveryForm(request.POST)
+        if form.is_valid():
+            delivery = form.save()
+            messages.success(request, f'Delivery {delivery.so_number} was added.')
+            return redirect('warehouse:dashboard')
+    else:
+        form = DeliveryForm(initial={'status': Delivery.STATUS_FOR_SCHEDULE})
+
+    return render(
+        request,
+        'warehouse/delivery_form.html',
+        {'form': form, 'page_title': 'New Delivery'},
+    )
+
+
+@login_required
+def delivery_update(request, pk):
+    """Update a delivery (status, driver, plate, warehouse staff, ...)."""
+    if not can_edit_deliveries(request.user):
+        return HttpResponseForbidden(
+            "You don't have permission to change warehouse deliveries."
+        )
+
+    delivery = get_object_or_404(Delivery, pk=pk)
+
+    if request.method == 'POST':
+        form = DeliveryForm(request.POST, instance=delivery)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f'Delivery {delivery.so_number} was updated.')
+            return redirect('warehouse:dashboard')
+    else:
+        form = DeliveryForm(instance=delivery)
+
+    return render(
+        request,
+        'warehouse/delivery_form.html',
+        {'form': form, 'page_title': f'Edit {delivery.so_number}', 'delivery': delivery},
+    )
 
 
 @login_required
@@ -108,7 +207,7 @@ def export_deliveries_excel(request):
     per section, so offline users get the same itinerary they used to receive
     by email.
     """
-    if not _can_view_deliveries(request.user):
+    if not can_export_deliveries(request.user):
         return HttpResponseForbidden(
             "You don't have permission to export warehouse deliveries."
         )

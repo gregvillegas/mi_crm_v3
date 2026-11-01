@@ -49,11 +49,12 @@ Each directory in the root is a Django app. The main apps are:
 | `gamification` | Points, levels, badges, daily/weekly missions |
 | `mass_mailing` | Email campaign manager with recipient tracking |
 | `customer_service` | Ticketing with Redmine integration |
+| `warehouse` | Delivery itinerary board (For Schedule / Scheduled / Accomplished + VAN DETAILS), real-time WebSocket feed (Django Channels), Excel export, delivery history/backlog tracing |
 | `crm_project` | Django project config, main URL router, shared DRF serializers and API views |
 
 ### Role-Based Access Control
 
-13 roles defined in `users/models.py`: `admin`, `avp`, `supervisor`, `salesperson`, `vp`, `gm`, `president`, `asm`, `sm`, `teamlead`, `techmgr`, `asst_techmgr`, `marketing`.
+15 roles defined in `users/models.py`: `admin`, `avp`, `supervisor`, `salesperson`, `vp`, `gm`, `president`, `asm`, `sm`, `teamlead`, `techmgr`, `asst_techmgr`, `technical_sales`, `marketing`, `warehouse`.
 
 Visibility scoping helpers live in `crm_project/serializers.py`:
 - `get_visible_customer_queryset(user)`
@@ -98,5 +99,6 @@ Detailed feature docs are in `docs/`. Key references:
 - `docs/HANDOVER_GUIDE.md` — comprehensive developer onboarding
 - `docs/TEAMS_APP.md` — role/permission matrix for team hierarchy
 - `docs/SALES_PROPOSALS_DOCUMENTATION.md` — proposal lifecycle and approval chain
+- `docs/WAREHOUSE_APP.md` — delivery itinerary board, WebSocket feed, warehouse role & export rules
 - `docs/LEAD_GENERATION_GUIDE.md` — lead scoring engine details
 - `docs/PRODUCTION_DEPLOY.md` — server setup (gunicorn, systemd, nginx)

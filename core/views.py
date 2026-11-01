@@ -18,6 +18,12 @@ from mass_mailing.models import Campaign, CampaignRecipient, MediaLibraryAsset, 
 @login_required
 def home(request):
     user = request.user
+
+    # Warehouse staff are soft-locked to the warehouse app, so send them
+    # straight to the delivery board instead of rendering the home page.
+    if getattr(user, 'role', None) == 'warehouse':
+        return redirect('warehouse:dashboard')
+
     context = {'user': user}
     
     # Gamification: Get Daily Missions

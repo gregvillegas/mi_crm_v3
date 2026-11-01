@@ -55,6 +55,10 @@ The system should now work as expected for both admin access and team management
 - **[BIOMETRIC_AUTHENTICATION_PROPOSAL.md](BIOMETRIC_AUTHENTICATION_PROPOSAL.md)** — Feasibility & phased implementation plan for biometric login (WebAuthn/Passkeys via existing django-allauth). For management review and sign-off; no code changed yet.
 - **[BIOMETRIC_ENROLLMENT_STAFF_GUIDE.md](BIOMETRIC_ENROLLMENT_STAFF_GUIDE.md)** — 1-page staff how-to for enrolling a device (Touch ID / Face ID / Windows Hello / Android) and signing in with biometrics. Ready for the Phase 1 pilot once approved.
 
+## Warehouse (Deliveries)
+
+- **[WAREHOUSE_APP.md](WAREHOUSE_APP.md)** — How the `warehouse` app works: the daily delivery itinerary board (For Schedule / Scheduled / Accomplished + VAN DETAILS), real-time WebSocket updates via Django Channels, the **Warehouse** office role that maintains the itinerary (soft-locked to this app only), the paginated **Delivery History** report with **backlog tracing**, and the Excel export that is visible to every viewer **except** the Account Manager (salesperson) role.
+
 ## Marketing (Mass Mailing)
 
 - **[MARKETING_ANNOUNCEMENTS_VISIBILITY_PLAN.md](MARKETING_ANNOUNCEMENTS_VISIBILITY_PLAN.md)** — Plan (for review/approval) to let salespeople and all roles **view** Marketing's announcements/events and know when a new announcement/event/EDM/promo is posted. Reuses the existing `Announcement` model + the notification-bell pattern; proposes a read-only feed page and a per-user unread "Marketing Updates" bell count. No code changed yet.
