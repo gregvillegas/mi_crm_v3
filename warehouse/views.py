@@ -3,10 +3,11 @@ from datetime import timedelta
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
-from django.http import HttpResponse, HttpResponseForbidden
+from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.dateparse import parse_date
+from django.views.decorators.http import require_POST
 
 from .forms import DeliveryForm
 from .models import Delivery
@@ -198,6 +199,25 @@ def delivery_update(request, pk):
         'warehouse/delivery_form.html',
         {'form': form, 'page_title': f'Edit {delivery.so_number}', 'delivery': delivery},
     )
+
+
+@login_required
+@require_POST
+def delivery_update_status(request, pk):
+    """Quickly flip a delivery status (e.g. Scheduled -> Accomplished)."""
+    if not can_edit_deliveries(request.user):
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+
+    delivery = get_object_or_404(Delivery, pk=pk)
+    new_status = request.POST.get('status')
+
+    if new_status not in dict(Delivery.STATUS_CHOICES):
+        return JsonResponse({'error': 'Invalid status'}, status=400)
+
+    delivery.status = new_status
+    delivery.save()
+
+    return JsonResponse({'success': True, 'new_status': delivery.status})
 
 
 @login_required

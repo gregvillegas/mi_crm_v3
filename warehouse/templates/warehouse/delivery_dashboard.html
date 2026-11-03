@@ -54,6 +54,7 @@
 </div>
 
 <div id="delivery-board" data-can-edit="{% if can_edit %}1{% else %}0{% endif %}">
+    {% csrf_token %}
 
 {# ---------------- Section 1: FOR SCHEDULE ---------------- #}
 <div class="card mb-4">
@@ -279,13 +280,34 @@
 
         if (CAN_EDIT) {
             var action = document.createElement('td');
-            action.className = 'text-end';
-            var link = document.createElement('a');
-            link.href = EDIT_URL_TEMPLATE.replace('/0/', '/' + d.id + '/');
-            link.className = 'btn btn-sm btn-outline-secondary';
-            link.title = 'Edit ' + d.so_number;
-            link.innerHTML = '<i class="fas fa-pen"></i>';
-            action.appendChild(link);
+            action.className = 'text-end text-nowrap';
+
+            if (d.status === 'SCHEDULED') {
+                var rescheduleBtn = document.createElement('button');
+                rescheduleBtn.type = 'button';
+                rescheduleBtn.className = 'btn btn-sm btn-outline-danger me-1 quick-status-btn';
+                rescheduleBtn.dataset.deliveryId = d.id;
+                rescheduleBtn.dataset.status = 'FOR_SCHEDULE';
+                rescheduleBtn.title = 'Reschedule (Move to For Schedule)';
+                rescheduleBtn.innerHTML = '<i class="fas fa-chevron-left"></i>';
+                action.appendChild(rescheduleBtn);
+
+                var accomplishedBtn = document.createElement('button');
+                accomplishedBtn.type = 'button';
+                accomplishedBtn.className = 'btn btn-sm btn-outline-success quick-status-btn';
+                accomplishedBtn.dataset.deliveryId = d.id;
+                accomplishedBtn.dataset.status = 'ACCOMPLISHED';
+                accomplishedBtn.title = 'Accomplished (Mark as Done)';
+                accomplishedBtn.innerHTML = '<i class="fas fa-chevron-right"></i>';
+                action.appendChild(accomplishedBtn);
+            } else {
+                var link = document.createElement('a');
+                link.href = EDIT_URL_TEMPLATE.replace('/0/', '/' + d.id + '/');
+                link.className = 'btn btn-sm btn-outline-secondary';
+                link.title = 'Edit ' + d.so_number;
+                link.innerHTML = '<i class="fas fa-pen"></i>';
+                action.appendChild(link);
+            }
             tr.appendChild(action);
         }
 
@@ -411,6 +433,38 @@
         if (!el) { return; }
         el.className = 'badge ' + className;
         el.textContent = label;
+    }
+
+    // Event delegation for quick status buttons
+    if (board && CAN_EDIT) {
+        board.addEventListener('click', function (e) {
+            var btn = e.target.closest('.quick-status-btn');
+            if (!btn) { return; }
+
+            var id = btn.dataset.deliveryId;
+            var status = btn.dataset.status;
+            var csrf = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+            btn.disabled = true;
+
+            fetch('/warehouse/' + id + '/update-status/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-CSRFToken': csrf
+                },
+                body: 'status=' + encodeURIComponent(status)
+            }).then(function (response) {
+                if (!response.ok) {
+                    btn.disabled = false;
+                    alert('Failed to update status.');
+                }
+                // WebSocket will handle the row move
+            }).catch(function (err) {
+                btn.disabled = false;
+                console.error(err);
+            });
+        });
     }
 
     var socket = null;

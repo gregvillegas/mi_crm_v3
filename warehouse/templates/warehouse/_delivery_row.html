@@ -30,12 +30,25 @@
         {% endif %}
     </td>
     {% if can_edit %}
-        <td class="text-end">
-            <a href="{% url 'warehouse:update' d.id %}"
-               class="btn btn-sm btn-outline-secondary"
-               title="Edit {{ d.so_number }}">
-                <i class="fas fa-pen"></i>
-            </a>
+        <td class="text-end text-nowrap">
+            {% if d.status == 'SCHEDULED' %}
+                <button type="button" class="btn btn-sm btn-outline-danger me-1 quick-status-btn"
+                        data-delivery-id="{{ d.id }}" data-status="FOR_SCHEDULE"
+                        title="Reschedule (Move to For Schedule)">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-success quick-status-btn"
+                        data-delivery-id="{{ d.id }}" data-status="ACCOMPLISHED"
+                        title="Accomplished (Mark as Done)">
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+            {% else %}
+                <a href="{% url 'warehouse:update' d.id %}"
+                   class="btn btn-sm btn-outline-secondary"
+                   title="Edit {{ d.so_number }}">
+                    <i class="fas fa-pen"></i>
+                </a>
+            {% endif %}
         </td>
     {% endif %}
 </tr>
