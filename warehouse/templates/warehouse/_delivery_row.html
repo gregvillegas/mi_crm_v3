@@ -8,7 +8,9 @@
     data-driver="{{ d.driver_staff|default:'' }}"
     data-status="{{ d.status }}">
     <td class="fw-semibold text-nowrap">
-        {{ d.so_number }}
+        <a href="{% url 'warehouse:timeline' d.id %}" class="link-dark text-decoration-none" title="View delivery timeline">
+            {{ d.so_number }}
+        </a>
         {% if d.is_backlog %}
             <span class="badge bg-danger ms-1" title="Backlog (moved back {{ d.backlog_count }} times)">BACKLOG</span>
         {% endif %}
@@ -27,6 +29,9 @@
             <span class="remarks-urgent">{{ d.remarks }}</span>
         {% else %}
             {{ d.remarks|default:'' }}
+        {% endif %}
+        {% if d.backlog_reason_name %}
+            <div class="backlog-reason-tag">Category: {{ d.backlog_reason_name }}</div>
         {% endif %}
     </td>
     {% if can_edit %}

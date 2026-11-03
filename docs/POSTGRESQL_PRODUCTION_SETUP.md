@@ -239,24 +239,22 @@ Since customers will start fresh:
 - import customers later using your preferred clean import process
 - rebuild new proposals, funnel entries, and campaign recipients only after customers are loaded
 
-## Apache / mod_wsgi Example
+## Environment Variables (Gunicorn / systemd)
 
-If you deploy with Apache and `mod_wsgi`, add the environment variables to your virtual host or WSGI process configuration.
+The project reads its configuration from `/var/www/mi_crm/.env` (via `python-decouple`), so the recommended approach is to put the PostgreSQL settings there — no web-server-specific configuration is needed:
 
-Example:
-
-```apache
-SetEnv DB_ENGINE postgresql
-SetEnv DB_NAME mi_crm
-SetEnv DB_USER mi_crm_user
-SetEnv DB_PASSWORD replace_with_secure_password
-SetEnv DB_HOST 127.0.0.1
-SetEnv DB_PORT 5432
-SetEnv DB_CONN_MAX_AGE 60
-SetEnv DB_SSLMODE prefer
+```ini
+DB_ENGINE=postgresql
+DB_NAME=mi_crm
+DB_USER=mi_crm_user
+DB_PASSWORD=replace_with_secure_password
+DB_HOST=127.0.0.1
+DB_PORT=5432
+DB_CONN_MAX_AGE=60
+DB_SSLMODE=prefer
 ```
 
-If you use `WSGIDaemonProcess`, you can also pass them there using `environment=` depending on your Apache setup.
+`.env` is read by both the Gunicorn (WSGI) and Daphne (ASGI) processes as long as their systemd unit uses `WorkingDirectory=/var/www/mi_crm`. If you prefer to keep secrets out of `.env`, pass them instead via the `Environment=` / `EnvironmentFile=` directives in the `gunicorn.service` and `mi_crm_daphne.service` units (see `PRODUCTION_DEPLOY.md`).
 
 ## Recommended Production Checklist
 

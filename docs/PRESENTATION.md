@@ -2,7 +2,7 @@
 ## Micro Image International Corp.
 
 **Platform:** Django 5.2 Web Application  
-**Stack:** Python · Bootstrap 5 · MariaDB · Apache 2.4  
+**Stack:** Python · Bootstrap 5 · MariaDB · nginx · Gunicorn · Daphne  
 **Date:** July 2026
 
 ---
@@ -375,7 +375,7 @@ Draft → Scheduled → Sending → Completed
 
 ```ini
 # .env
-SITE_URL=https://crm.microimageph.com
+SITE_URL=https://micrm.microimageph.com
 ```
 
 **Access by Role**

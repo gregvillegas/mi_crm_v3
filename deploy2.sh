@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # Deploy the CRM to production (crm_azure) via rsync, then run migrations,
-# collect static files, and restart gunicorn.
+# collect static files, and restart gunicorn plus Daphne when available.
 #
 # Safe-by-design:
 #   * .env is EXCLUDED — production keeps its own secrets (SMTP password, SECRET_KEY,
@@ -10,8 +10,8 @@
 #     virtualenv, and uploads are never clobbered.
 #
 # Usage:
-#   ./deploy.sh            # normal deploy (prompts before the destructive-ish steps)
-#   ./deploy.sh --dry-run  # show what rsync WOULD copy, make no changes
+#   ./deploy2.sh            # normal deploy (prompts before the destructive-ish steps)
+#   ./deploy2.sh --dry-run  # show what rsync WOULD copy, make no changes
 #
 set -euo pipefail
 
@@ -23,6 +23,7 @@ LOCAL_DIR="/Users/greg/Documents/mi_crm_v2/"
 SSH_KEY="$HOME/.ssh/id_rsa"
 SSH="ssh -i $SSH_KEY"
 GUNICORN_SERVICE="gunicorn"
+DAPHNE_SERVICE="mi_crm_daphne"
 
 DRY_RUN=""
 if [[ "${1:-}" == "--dry-run" ]]; then
@@ -100,6 +101,16 @@ sudo systemctl restart $GUNICORN_SERVICE
 
 echo '--- gunicorn status ---'
 sudo systemctl is-active $GUNICORN_SERVICE
+
+if sudo systemctl list-unit-files | grep -q "^$DAPHNE_SERVICE\\.service"; then
+    echo '--- restart daphne ---'
+    sudo systemctl restart $DAPHNE_SERVICE
+
+    echo '--- daphne status ---'
+    sudo systemctl is-active $DAPHNE_SERVICE
+else
+    echo '--- daphne service not installed on this server; skipping ---'
+fi
 REMOTE
 
 echo ">>> Deploy complete."

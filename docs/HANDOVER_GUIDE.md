@@ -2,7 +2,7 @@
 
 **Prepared for:** Sr. Teamlead / Teamlead  
 **Company:** Micro Image International Corp.  
-**Production Target:** Ubuntu 22.04 LTS · Apache 2.4 · MariaDB 10.6  
+**Production Target:** Ubuntu 22.04 LTS · nginx · Gunicorn (WSGI) · Daphne (ASGI) · Redis · MariaDB 10.6  
 **Date:** July 2026
 
 ---
@@ -39,7 +39,10 @@ MiCRM is a **Django 5.2** web application — a full-featured internal CRM built
 | Web Framework | Django 5.2.5 |
 | Database (Production) | MariaDB 10.6 (on Ubuntu 22.04) |
 | Database (Development) | SQLite 3 |
-| Web Server | Apache 2.4 with `mod_wsgi` |
+| Web Server | nginx (TLS, static/media, reverse proxy) |
+| App Server (WSGI) | Gunicorn (systemd service `gunicorn`, unix socket `/run/gunicorn.sock`) |
+| App Server (ASGI) | Daphne (systemd service `mi_crm_daphne`) — WebSocket feed |
+| Channel Layer | Redis |
 | Auth / MFA | django-allauth + TOTP |
 | REST API | Django REST Framework |
 | Frontend | Bootstrap 5 + Django templates |
@@ -51,11 +54,14 @@ MiCRM is a **Django 5.2** web application — a full-featured internal CRM built
 | Item | Value |
 |---|---|
 | OS | Ubuntu 22.04 LTS |
+| Domain | `micrm.microimageph.com` |
 | Project path | `/var/www/mi_crm` |
 | Python venv | `/var/www/mi_crm/venv` |
-| Apache config | `/etc/apache2/sites-available/mi_crm.conf` |
-| Apache error log | `/var/log/apache2/mi_crm_error.log` |
-| Apache access log | `/var/log/apache2/mi_crm_access.log` |
+| nginx site config | `/etc/nginx/sites-available/micrm_nginx` |
+| nginx error log | `/var/log/nginx/error.log` |
+| nginx access log | `/var/log/nginx/access.log` |
+| Gunicorn service | `systemctl status gunicorn` |
+| Daphne service | `systemctl status mi_crm_daphne` |
 | MariaDB database | `mi_crm` |
 | MariaDB user | `mi_crm_user` |
 
@@ -68,7 +74,8 @@ mi_crm/
 ├── crm_project/            # Django project config
 │   ├── settings.py         # All settings (reads from .env)
 │   ├── urls.py             # Root URL configuration
-│   ├── wsgi.py             # WSGI entry point for Apache
+│   ├── wsgi.py             # WSGI entry point for Gunicorn
+│   ├── asgi.py             # ASGI entry point for Daphne (HTTP + WebSocket)
 │   └── api_views.py        # REST API viewsets
 │
 ├── core/                   # Shared utilities, base templates, middleware
@@ -94,10 +101,12 @@ mi_crm/
 ├── staticfiles/            # Collected static files (generated, do not edit)
 ├── media/                  # User-uploaded files
 │
-├── requirements.txt        # Pinned Python dependencies
+├── requirements.txt        # Pinned Python dependencies (see also dependencies/)
 ├── manage.py               # Django management script
-├── deploy.sh               # Deployment automation script
-├── apache_crm.conf         # Apache VirtualHost configuration
+├── deploy_crm_office.sh    # rsync + migrate + collectstatic (staging/office server)
+├── deploy_crm_azure.sh     # rsync + migrate + collectstatic (production server)
+├── etc/
+│   └── micrm_nginx         # nginx site configuration
 ├── .env.example            # Environment variables template
 ├── .env                    # LIVE environment variables (never commit)
 └── .gitignore
@@ -228,16 +237,25 @@ All settings are read from `.env` via `python-decouple`. No hardcoded secrets. K
 - `DB_ENGINE=sqlite3` (or unset) → falls back to local SQLite for development
 - Email falls back to file-based backend if `EMAIL_HOST_USER` is empty
 
-### `apache_crm.conf`
-**Deployed to:** `/etc/apache2/sites-available/mi_crm.conf`  
-Contains two VirtualHosts:
-- Port 80 → redirects everything to HTTPS
-- Port 443 → serves the Django app via `mod_wsgi`, static files, and media
+### `etc/micrm_nginx`
+**Deployed to:** `/etc/nginx/sites-available/micrm_nginx`  
+Contains:
+- A `default_server` block that uses `ssl_reject_handshake on;` to drop unknown hostnames
+- Port 80 → `server` block that redirects everything to HTTPS
+- Port 443 → `server` block with TLS, security headers, `client_max_body_size 150M`,
+  static/media aliases, a private-network-restricted `/admin`, `proxy_pass` to the
+  Gunicorn unix socket for `location /`, and a `location /ws/` proxy to Daphne for
+  the Warehouse Deliveries WebSocket feed
 
-### `deploy.sh`
-Two modes:
-- `./deploy.sh` — full first-time install (installs packages, creates DB, sets up venv, enables Apache)
-- `./deploy.sh --update` — fast update (pip install, migrate, collectstatic, reload Apache)
+### `deploy_crm_office.sh` / `deploy_crm_azure.sh`
+
+rsync the working tree to the server, then run `migrate`, `collectstatic`, and
+restart the `gunicorn` service. `.env`, `venv`, `media`, and `db.sqlite3` are
+excluded so the server keeps its own secrets and data. Both support `--dry-run`.
+
+> Deployment is not complete until **`mi_crm_daphne`** (the WebSocket/ASGI
+> service) is restarted too — see
+> [PRODUCTION_DEPLOY.md §8](PRODUCTION_DEPLOY.md#8-real-time-websockets-daphne--redis).
 
 ---
 
@@ -249,7 +267,7 @@ All variables go into `/var/www/mi_crm/.env` on the production server.
 |---|---|---|---|
 | `SECRET_KEY` | **Yes** | *(generated)* | Django secret key — must be unique and secret |
 | `DEBUG` | **Yes** | `False` | Must be `False` in production |
-| `ALLOWED_HOSTS` | **Yes** | `crm.microimageph.com` | Comma-separated allowed hostnames |
+| `ALLOWED_HOSTS` | **Yes** | `micrm.microimageph.com` | Comma-separated allowed hostnames |
 | `DB_ENGINE` | **Yes** | `mariadb` | Use `mariadb` for production |
 | `DB_NAME` | **Yes** | `mi_crm` | MariaDB database name |
 | `DB_USER` | **Yes** | `mi_crm_user` | MariaDB username |
@@ -263,13 +281,14 @@ All variables go into `/var/www/mi_crm/.env` on the production server.
 | `EMAIL_HOST_PASSWORD` | **Yes** | *(your password)* | SMTP password |
 | `DEFAULT_FROM_EMAIL` | No | `sales@microimageph.com` | From address for outgoing email |
 | `CORS_ALLOW_ALL_ORIGINS` | No | `False` | Set `False` in production |
-| `CORS_ALLOWED_ORIGINS` | No | `https://crm.microimageph.com` | Comma-separated CORS origins |
+| `CORS_ALLOWED_ORIGINS` | No | `https://micrm.microimageph.com` | Comma-separated CORS origins |
 | `REDMINE_URL` | No | `http://10.30.30.131` | Redmine server URL |
 | `REDMINE_API_KEY` | No | *(api key)* | Redmine API key for ticket creation |
 | `REDMINE_PROJECT_ID` | No | `14` | Redmine project ID |
 | `REDMINE_TRACKER_ID` | No | `7` | Redmine tracker ID |
-| `SITE_URL` | **Yes** | `https://crm.microimageph.com` | **CRITICAL:** Full URL for email links (unsubscribe, interested). Without this, campaign email links will be broken! |
+| `SITE_URL` | **Yes** | `https://micrm.microimageph.com` | **CRITICAL:** Full URL for email links (unsubscribe, interested). Without this, campaign email links will be broken! |
 | `SECURE_SSL_REDIRECT` | No | `True` | Force HTTPS redirect |
+| `REDIS_URL` | **Yes** (prod) | `redis://127.0.0.1:6379/0` | Redis channel layer for the Channels WebSocket feed. Blank ⇒ in-memory layer (single-process dev only) |
 
 **Generating a new SECRET_KEY:**
 ```bash
@@ -405,15 +424,12 @@ sudo apt-get update && sudo apt-get upgrade -y
 
 sudo apt-get install -y \
     python3 python3-pip python3-venv python3-dev \
-    apache2 libapache2-mod-wsgi-py3 \
+    nginx \
     mariadb-server mariadb-client \
     libmariadb-dev pkg-config \
+    redis-server \
     git curl ufw \
-    certbot python3-certbot-apache
-
-# Enable required Apache modules
-sudo a2enmod wsgi rewrite headers ssl expires
-sudo systemctl restart apache2
+    certbot python3-certbot-nginx
 ```
 
 ---
@@ -451,7 +467,7 @@ python3 -m venv venv
 source venv/bin/activate
 
 pip install --upgrade pip wheel
-pip install -r requirements.txt
+pip install -r dependencies/requirements.txt
 ```
 
 ---
@@ -470,7 +486,7 @@ Fill in these values at minimum:
 SECRET_KEY=paste-generated-key-here
 
 DEBUG=False
-ALLOWED_HOSTS=crm.microimageph.com
+ALLOWED_HOSTS=micrm.microimageph.com
 
 DB_ENGINE=mariadb
 DB_NAME=mi_crm
@@ -482,8 +498,13 @@ EMAIL_HOST_PASSWORD=your-smtp-password
 
 REDMINE_API_KEY=your-redmine-api-key
 
+SITE_URL=https://micrm.microimageph.com
+
 CORS_ALLOW_ALL_ORIGINS=False
-CORS_ALLOWED_ORIGINS=https://crm.microimageph.com
+CORS_ALLOWED_ORIGINS=https://micrm.microimageph.com
+
+# Real-time WebSocket channel layer (Warehouse Deliveries feed)
+REDIS_URL=redis://127.0.0.1:6379/0
 ```
 
 Generate the secret key:
@@ -540,21 +561,21 @@ sudo chmod 640 /var/www/mi_crm/.env
 
 ---
 
-### Step 9 — Configure Apache
+### Step 9 — Configure nginx
 
 ```bash
-# Copy the VirtualHost config
-sudo cp /var/www/mi_crm/apache_crm.conf /etc/apache2/sites-available/mi_crm.conf
+# Copy the site config
+sudo cp /var/www/mi_crm/etc/micrm_nginx /etc/nginx/sites-available/micrm_nginx
 
 # Enable the site, disable the default placeholder
-sudo a2ensite mi_crm.conf
-sudo a2dissite 000-default.conf
+sudo ln -sf /etc/nginx/sites-available/micrm_nginx /etc/nginx/sites-enabled/micrm_nginx
+sudo rm -f /etc/nginx/sites-enabled/default
 
-# Test the configuration — must say "Syntax OK"
-sudo apache2ctl configtest
+# Test the configuration — must say "test is successful"
+sudo nginx -t
 
 # Apply
-sudo systemctl reload apache2
+sudo systemctl reload nginx
 ```
 
 ---
@@ -562,10 +583,10 @@ sudo systemctl reload apache2
 ### Step 10 — Set up SSL (HTTPS)
 
 ```bash
-sudo certbot --apache -d crm.microimageph.com
+sudo certbot --nginx -d micrm.microimageph.com
 ```
 
-Certbot will automatically update the Apache config with your certificate and set up auto-renewal. Test it:
+Certbot will automatically update the nginx config with your certificate and set up auto-renewal. Test it:
 
 ```bash
 sudo certbot renew --dry-run
@@ -573,18 +594,33 @@ sudo certbot renew --dry-run
 
 ---
 
-### Step 11 — Configure the firewall
+### Step 11 — Enable the ASGI service (WebSocket feed)
+
+The Warehouse Deliveries board streams live updates over `/ws/`. If
+`/etc/systemd/system/mi_crm_daphne.service` does not exist yet, create it and
+start Redis — full details in
+[PRODUCTION_DEPLOY.md §8](PRODUCTION_DEPLOY.md#8-real-time-websockets-daphne--redis).
+
+```bash
+sudo systemctl enable --now redis-server
+sudo systemctl enable --now mi_crm_daphne
+sudo systemctl restart gunicorn mi_crm_daphne
+```
+
+---
+
+### Step 12 — Configure the firewall
 
 ```bash
 sudo ufw allow OpenSSH
-sudo ufw allow 'Apache Full'
+sudo ufw allow 'Nginx Full'
 sudo ufw enable
 sudo ufw status
 ```
 
 ---
 
-### Step 12 — Create the Django admin superuser
+### Step 13 — Create the Django admin superuser
 
 ```bash
 cd /var/www/mi_crm
@@ -608,30 +644,37 @@ source venv/bin/activate
 python manage.py check --deploy
 
 # 2. Confirm site responds
-curl -I https://crm.microimageph.com
+curl -I https://micrm.microimageph.com
 # Expect: HTTP/2 200
 
 # 3. Confirm HTTP redirects to HTTPS
-curl -I http://crm.microimageph.com
-# Expect: 301 Moved Permanently → https://crm.microimageph.com
+curl -I http://micrm.microimageph.com
+# Expect: 301 Moved Permanently → https://micrm.microimageph.com
 
-# 4. Check Apache is running
-sudo systemctl status apache2
+# 4. Check nginx is running
+sudo systemctl status nginx
 
-# 5. Check MariaDB is running
+# 5. Check the app services are running
+sudo systemctl status gunicorn
+sudo systemctl status mi_crm_daphne
+sudo systemctl status redis-server
+
+# 6. Check MariaDB is running
 sudo systemctl status mariadb
 
-# 6. Check error log is clean
-sudo tail -20 /var/log/apache2/mi_crm_error.log
+# 7. Check error log is clean
+sudo tail -20 /var/log/nginx/error.log
 ```
 
 **Manual browser checks:**
 
-- [ ] Login page loads at `https://crm.microimageph.com/login/`
-- [ ] Admin panel loads at `https://crm.microimageph.com/admin/`
+- [ ] Login page loads at `https://micrm.microimageph.com/login/`
+- [ ] Admin panel loads at `https://micrm.microimageph.com/admin/`
 - [ ] Static files load (CSS and JS render correctly — no broken styles)
 - [ ] File upload works (try uploading a file in File Sharing)
 - [ ] Email sends (trigger a proposal email or test via Django shell)
+- [ ] Warehouse Deliveries board shows a green **Live** badge (WebSocket connected)
+- [ ] Brief **Reconnecting…** during load is acceptable if it quickly returns to **Live**
 
 ---
 
@@ -642,24 +685,28 @@ When new code is ready on the development machine:
 **Step 1 — Push updated code to the server**
 
 ```bash
-# From your local machine
-rsync -avz --progress \
-  --exclude='.git' --exclude='venv' --exclude='__pycache__' \
-  --exclude='db.sqlite3' --exclude='staticfiles' --exclude='media' \
-  /path/to/mi_crm/ \
-  your_user@SERVER_IP:/var/www/mi_crm/
+# From your local machine (uses the existing deploy script)
+./deploy_crm_office.sh     # stage
+./deploy_crm_azure.sh      # production
 ```
 
-**Step 2 — Run the update script on the server**
+**Step 2 — Restart the ASGI service**
 
 ```bash
 cd /var/www/mi_crm
-./deploy.sh --update
+sudo systemctl restart mi_crm_daphne
 ```
 
-This runs in order: `pip install` → `migrate` → `collectstatic` → fix permissions → reload Apache.
+The deploy scripts run in order: `pip install` → `migrate` → `collectstatic` →
+`check` → restart `gunicorn`.
 
-**If there is a new migration** that needs attention, the migrate step will handle it automatically. If it fails, check the output and resolve before reloading Apache.
+> **Always restart `mi_crm_daphne` as well.** It holds the old code in memory, so
+> without a restart the WebSocket feed keeps the previous behaviour even though
+> Gunicorn reloaded. See
+> [PRODUCTION_DEPLOY.md §11](PRODUCTION_DEPLOY.md#11-subsequent-deploys-updates).
+
+**If there is a new migration** the migrate step handles it automatically. If it
+fails, check the output and resolve before restarting the services.
 
 ---
 
@@ -668,10 +715,10 @@ This runs in order: `pip install` → `migrate` → `collectstatic` → fix perm
 The Django admin panel is available at:
 
 ```
-https://crm.microimageph.com/admin/
+https://micrm.microimageph.com/admin/
 ```
 
-Log in with the superuser account created in Step 12 of the deployment. From here you can:
+Log in with the superuser account created in Step 13 of the deployment. From here you can:
 
 - Create, edit, and deactivate users
 - Manage teams, groups, and memberships
@@ -684,9 +731,9 @@ Log in with the superuser account created in Step 12 of the deployment. From her
 
 ## 13. Routine Maintenance
 
-### Check Apache logs daily (first week after go-live)
+### Check nginx logs daily (first week after go-live)
 ```bash
-sudo tail -f /var/log/apache2/mi_crm_error.log
+sudo tail -f /var/log/nginx/error.log
 ```
 
 ### MariaDB backup (weekly recommended)
@@ -723,17 +770,22 @@ du -sh /var/www/mi_crm/media/
 
 ## 14. Troubleshooting Reference
 
-### Site shows Apache default page instead of the CRM
+### Site shows the nginx default page instead of the CRM
 ```bash
-sudo a2ensite mi_crm.conf
-sudo a2dissite 000-default.conf
-sudo systemctl reload apache2
+sudo ln -sf /etc/nginx/sites-available/micrm_nginx /etc/nginx/sites-enabled/micrm_nginx
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t && sudo systemctl reload nginx
 ```
 
-### HTTP 500 Internal Server Error
+### HTTP 502 Bad Gateway / 500 Internal Server Error
 ```bash
-sudo tail -50 /var/log/apache2/mi_crm_error.log
-# Also test Django directly:
+# 502 = nginx cannot reach Gunicorn
+sudo systemctl status gunicorn
+sudo journalctl -u gunicorn -n 50
+ls -l /run/gunicorn.sock
+
+# 500 = Django raised; check the app
+sudo tail -50 /var/log/nginx/error.log
 source /var/www/mi_crm/venv/bin/activate
 cd /var/www/mi_crm
 python manage.py check
@@ -745,7 +797,7 @@ source /var/www/mi_crm/venv/bin/activate
 cd /var/www/mi_crm
 python manage.py collectstatic --noinput --clear
 sudo chown -R www-data:www-data /var/www/mi_crm/staticfiles
-sudo systemctl reload apache2
+sudo systemctl reload nginx
 ```
 
 ### `ModuleNotFoundError: No module named 'MySQLdb'`
@@ -753,15 +805,35 @@ sudo systemctl reload apache2
 sudo apt-get install -y libmariadb-dev libmariadb-dev-compat
 source /var/www/mi_crm/venv/bin/activate
 pip install mysqlclient==2.2.6
-sudo systemctl reload apache2
+sudo systemctl restart gunicorn
 ```
 
 ### `ModuleNotFoundError: No module named 'decouple'`
 ```bash
 source /var/www/mi_crm/venv/bin/activate
 pip install python-decouple==3.8
-sudo systemctl reload apache2
+sudo systemctl restart gunicorn
 ```
+
+### `ModuleNotFoundError: No module named 'channels'`
+```bash
+source /var/www/mi_crm/venv/bin/activate
+cd /var/www/mi_crm
+pip install channels==4.2.2 channels-redis==4.2.1 daphne==4.2.1
+sudo systemctl restart gunicorn mi_crm_daphne
+```
+
+### Warehouse "Live" badge stays on "Reconnecting…"
+```bash
+sudo systemctl status mi_crm_daphne
+redis-cli ping                      # expect PONG
+grep -n "location /ws/" /etc/nginx/sites-available/micrm_nginx
+```
+See [PRODUCTION_DEPLOY.md §12](PRODUCTION_DEPLOY.md#12-troubleshooting) for the full checklist.
+
+If the badge only flashes **Reconnecting…** briefly and then returns to **Live**,
+the socket most likely reconnected successfully after a page load, restart, or
+short network interruption.
 
 ### Database connection refused
 ```bash
@@ -800,13 +872,13 @@ python manage.py migrate --run-syncdb
 python manage.py loaddata seed_backup_YYYY-MM-DD_HHMMSS.json
 ```
 
-### Apache config test fails
+### nginx config test fails
 ```bash
-sudo apache2ctl configtest
+sudo nginx -t
 # Read the error carefully — usually a missing SSL certificate path or syntax error
 # Edit the config to fix:
-sudo nano /etc/apache2/sites-available/mi_crm.conf
-sudo systemctl reload apache2
+sudo nano /etc/nginx/sites-available/micrm_nginx
+sudo systemctl reload nginx
 ```
 
 ### MFA locked out (user can't log in)
@@ -827,7 +899,7 @@ From the Django admin panel (`/admin/`), go to **MFA > Authenticators** and dele
 | Redmine API key | `/var/www/mi_crm/.env` → `REDMINE_API_KEY` |
 | Server SSH access | IT / sysadmin team |
 | SSL certificate renewal | Automatic via certbot (check `sudo certbot renew --dry-run`) |
-| Django admin superuser | Set during Step 12 of deployment |
+| Django admin superuser | Set during Step 13 of deployment |
 
 **Email used by the system:** `crm_sales@microimageph.com`  
 **Email server:** `email.microimageph.com:587` (TLS)  

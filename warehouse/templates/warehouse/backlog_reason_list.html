@@ -1,0 +1,80 @@
+{% extends 'base.html' %}
+{% load crispy_forms_tags %}
+
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+    <div class="col-12 col-xl-5">
+        <div class="card">
+            <div class="card-header fw-semibold">
+                {% if editing_reason %}Edit Backlog Category{% else %}New Backlog Category{% endif %}
+            </div>
+            <div class="card-body">
+                <form method="post" action="{% if editing_reason %}{% url 'warehouse:backlog_reason_update' editing_reason.id %}{% else %}{% url 'warehouse:backlog_reason_create' %}{% endif %}">
+                    {% csrf_token %}
+                    {{ form|crispy }}
+                    <div class="d-flex justify-content-end gap-2">
+                        {% if editing_reason %}
+                            <a href="{% url 'warehouse:backlog_reason_list' %}" class="btn btn-outline-secondary">Cancel</a>
+                        {% endif %}
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save"></i> Save
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-xl-7">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+            <h2 class="mb-0"><i class="fas fa-tags"></i> {{ page_title }}</h2>
+            <a href="{% url 'warehouse:dashboard' %}" class="btn btn-sm btn-outline-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Board
+            </a>
+        </div>
+
+        <div class="card">
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>NAME</th>
+                            <th>GROUP</th>
+                            <th class="text-center">ORDER</th>
+                            <th class="text-center">ACTIVE</th>
+                            <th class="text-end">ACTION</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for reason in reasons %}
+                            <tr>
+                                <td class="fw-semibold">{{ reason.name }}</td>
+                                <td>{{ reason.get_reason_group_display }}</td>
+                                <td class="text-center">{{ reason.sort_order }}</td>
+                                <td class="text-center">
+                                    {% if reason.is_active %}
+                                        <span class="badge bg-success">Active</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">Inactive</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">
+                                    <a href="{% url 'warehouse:backlog_reason_update' reason.id %}" class="btn btn-sm btn-outline-primary">
+                                        <i class="fas fa-pen"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                        {% empty %}
+                            <tr>
+                                <td colspan="5" class="text-center text-muted py-3">No backlog categories yet.</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

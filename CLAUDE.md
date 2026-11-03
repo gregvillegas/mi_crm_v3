@@ -23,8 +23,8 @@ python manage.py test <app_name>
 python manage.py collectstatic --noinput
 
 # Deploy to production
-./deploy.sh              # interactive deploy via rsync + gunicorn restart
-./deploy.sh --dry-run    # preview rsync without changes
+./deploy_crm_office.sh   # rsync to crm_office + migrate/collectstatic + restart gunicorn
+./deploy_crm_azure.sh    # rsync to crm_azure  + migrate/collectstatic + restart gunicorn
 ```
 
 Dependencies are in `dependencies/requirements.txt` (dev) and `dependencies/requirements-prod.txt` (prod). Install via `pip install -r dependencies/requirements.txt`.
@@ -83,7 +83,7 @@ Proposals export to PDF using `reportlab`. PDF logic lives in `sales_proposals/`
 
 ### Deployment
 
-`deploy.sh` rsyncs the working tree to `crm_azure:/var/www/mi_crm`, then runs migrations and restarts gunicorn. Production `.env` is never overwritten (excluded from rsync). SSH key at `~/.susi/CRM_key.pem`.
+`deploy_crm_azure.sh` rsyncs the working tree to `crm_azure:/var/www/mi_crm`, then runs migrations and restarts gunicorn. Use `deploy_crm_office.sh` for the `crm_office` server. Production `.env` is never overwritten (excluded from rsync). SSH key at `~/.susi/CRM_key.pem` (azure) / `~/.ssh/id_rsa` (office).
 
 ## Key Conventions
 

@@ -3,14 +3,20 @@ from datetime import timedelta
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
+from django.db.models import Count
 from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.views.decorators.http import require_POST
 
-from .forms import DeliveryForm
-from .models import Delivery
+from .forms import BacklogReasonForm, DeliveryForm
+from .models import (
+    BacklogReason,
+    Delivery,
+    get_transition_backlog_reason_error,
+    get_transition_remarks_error,
+)
 
 # Column layout shared by the dashboard tables and the Excel export so the two
 # never drift apart.
@@ -63,6 +69,42 @@ def _selected_date(request):
     """Return the ?date=YYYY-MM-DD value, defaulting to today."""
     parsed = parse_date(request.GET.get('date') or '')
     return parsed or timezone.localdate()
+
+
+def _backlog_summary():
+    """Structured rollups for active backlog reporting."""
+    backlog_qs = Delivery.objects.filter(
+        status=Delivery.STATUS_FOR_SCHEDULE,
+        is_backlog=True,
+    ).select_related('backlog_reason')
+
+    by_reason = list(
+        backlog_qs.values('backlog_reason__name', 'backlog_reason__reason_group')
+        .annotate(total=Count('id'))
+        .order_by('-total', 'backlog_reason__name')
+    )
+    by_ae = list(
+        backlog_qs.values('ae')
+        .annotate(total=Count('id'))
+        .order_by('-total', 'ae')
+    )
+    by_area = list(
+        backlog_qs.values('area')
+        .annotate(total=Count('id'))
+        .order_by('-total', 'area')
+    )
+    repeat_items = list(
+        backlog_qs.filter(backlog_count__gt=1)
+        .order_by('-backlog_count', 'so_number')[:10]
+    )
+
+    return {
+        'total': backlog_qs.count(),
+        'by_reason': by_reason,
+        'by_ae': by_ae,
+        'by_area': by_area,
+        'repeat_items': repeat_items,
+    }
 
 
 def _build_van_details(deliveries):
@@ -123,6 +165,10 @@ def delivery_dashboard(request):
         'scheduled': data['scheduled'],
         'accomplished': data['accomplished'],
         'van_details': _build_van_details(data['scheduled']),
+        'backlog_summary': _backlog_summary(),
+        'active_backlog_reasons': BacklogReason.objects.filter(is_active=True).order_by(
+            'reason_group', 'sort_order', 'name'
+        ),
         'can_edit': can_edit_deliveries(request.user),
         'can_export': can_export_deliveries(request.user),
     }
@@ -152,6 +198,116 @@ def delivery_history(request):
 
 
 @login_required
+def backlog_reason_list(request):
+    """Warehouse-managed lookup list for backlog reason categories."""
+    if not can_edit_deliveries(request.user):
+        return HttpResponseForbidden(
+            "You don't have permission to manage backlog categories."
+        )
+
+    reasons = BacklogReason.objects.order_by('reason_group', 'sort_order', 'name')
+    form = BacklogReasonForm()
+
+    return render(
+        request,
+        'warehouse/backlog_reason_list.html',
+        {
+            'reasons': reasons,
+            'form': form,
+            'page_title': 'Backlog Categories',
+            'editing_reason': None,
+        },
+    )
+
+
+@login_required
+def backlog_reason_create(request):
+    """Create a backlog reason category from the warehouse app."""
+    if not can_edit_deliveries(request.user):
+        return HttpResponseForbidden(
+            "You don't have permission to manage backlog categories."
+        )
+
+    if request.method != 'POST':
+        return redirect('warehouse:backlog_reason_list')
+
+    form = BacklogReasonForm(request.POST)
+    reasons = BacklogReason.objects.order_by('reason_group', 'sort_order', 'name')
+    if form.is_valid():
+        reason = form.save()
+        messages.success(request, f'Backlog category "{reason.name}" was saved.')
+        return redirect('warehouse:backlog_reason_list')
+
+    return render(
+        request,
+        'warehouse/backlog_reason_list.html',
+        {
+            'reasons': reasons,
+            'form': form,
+            'page_title': 'Backlog Categories',
+            'editing_reason': None,
+        },
+    )
+
+
+@login_required
+def backlog_reason_update(request, pk):
+    """Edit an existing backlog reason category."""
+    if not can_edit_deliveries(request.user):
+        return HttpResponseForbidden(
+            "You don't have permission to manage backlog categories."
+        )
+
+    reason = get_object_or_404(BacklogReason, pk=pk)
+    reasons = BacklogReason.objects.order_by('reason_group', 'sort_order', 'name')
+
+    if request.method == 'POST':
+        form = BacklogReasonForm(request.POST, instance=reason)
+        if form.is_valid():
+            updated_reason = form.save()
+            messages.success(
+                request, f'Backlog category "{updated_reason.name}" was updated.'
+            )
+            return redirect('warehouse:backlog_reason_list')
+    else:
+        form = BacklogReasonForm(instance=reason)
+
+    return render(
+        request,
+        'warehouse/backlog_reason_list.html',
+        {
+            'reasons': reasons,
+            'form': form,
+            'page_title': 'Backlog Categories',
+            'editing_reason': reason,
+        },
+    )
+
+
+@login_required
+def delivery_timeline(request, pk):
+    """Timeline of status/remark changes for one delivery."""
+    if not _can_view_deliveries(request.user):
+        return HttpResponseForbidden("You don't have access to the warehouse logs.")
+
+    delivery = get_object_or_404(
+        Delivery.objects.select_related('warehouse_staff', 'backlog_reason'),
+        pk=pk,
+    )
+    events = delivery.events.select_related('changed_by').all()
+
+    return render(
+        request,
+        'warehouse/delivery_timeline.html',
+        {
+            'delivery': delivery,
+            'events': events,
+            'can_edit': can_edit_deliveries(request.user),
+        },
+    )
+
+
+@login_required
 def delivery_create(request):
     """Add a delivery to the itinerary."""
     if not can_edit_deliveries(request.user):
@@ -162,7 +318,9 @@ def delivery_create(request):
     if request.method == 'POST':
         form = DeliveryForm(request.POST)
         if form.is_valid():
-            delivery = form.save()
+            delivery = form.save(commit=False)
+            delivery._event_user = request.user
+            delivery.save()
             messages.success(request, f'Delivery {delivery.so_number} was added.')
             return redirect('warehouse:dashboard')
     else:
@@ -188,7 +346,9 @@ def delivery_update(request, pk):
     if request.method == 'POST':
         form = DeliveryForm(request.POST, instance=delivery)
         if form.is_valid():
-            form.save()
+            delivery = form.save(commit=False)
+            delivery._event_user = request.user
+            delivery.save()
             messages.success(request, f'Delivery {delivery.so_number} was updated.')
             return redirect('warehouse:dashboard')
     else:
@@ -210,14 +370,50 @@ def delivery_update_status(request, pk):
 
     delivery = get_object_or_404(Delivery, pk=pk)
     new_status = request.POST.get('status')
+    remarks = (request.POST.get('remarks') or '').strip()
+    backlog_reason = None
+    backlog_reason_id = request.POST.get('backlog_reason') or ''
 
     if new_status not in dict(Delivery.STATUS_CHOICES):
         return JsonResponse({'error': 'Invalid status'}, status=400)
+    if backlog_reason_id:
+        backlog_reason = BacklogReason.objects.filter(pk=backlog_reason_id).first()
+        if backlog_reason is None:
+            return JsonResponse({'error': 'Invalid backlog category'}, status=400)
+
+    error = get_transition_remarks_error(delivery.status, new_status, remarks)
+    reason_error = get_transition_backlog_reason_error(
+        delivery.status, new_status, backlog_reason
+    )
+    if error:
+        return JsonResponse({'error': error}, status=400)
+    if reason_error:
+        return JsonResponse({'error': reason_error}, status=400)
 
     delivery.status = new_status
+    if remarks:
+        delivery.remarks = remarks
+        delivery._event_note = remarks
+    if delivery.status == Delivery.STATUS_FOR_SCHEDULE and delivery.is_backlog:
+        delivery.backlog_reason = backlog_reason or delivery.backlog_reason
+    elif (
+        request.POST.get('backlog_reason') is not None
+        and delivery.status == Delivery.STATUS_FOR_SCHEDULE
+    ):
+        delivery.backlog_reason = backlog_reason
+    elif backlog_reason is not None:
+        delivery.backlog_reason = backlog_reason
+    delivery._event_user = request.user
     delivery.save()
 
-    return JsonResponse({'success': True, 'new_status': delivery.status})
+    return JsonResponse(
+        {
+            'success': True,
+            'new_status': delivery.status,
+            'remarks': delivery.remarks or '',
+            'backlog_reason': delivery.backlog_reason_name,
+        }
+    )
 
 
 @login_required

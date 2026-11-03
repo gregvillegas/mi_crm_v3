@@ -1,7 +1,7 @@
 from django.test import TestCase
 from django.urls import reverse
 from users.models import User
-from .models import Delivery, WarehouseStaff
+from .models import BacklogReason, Delivery, DeliveryEvent, WarehouseStaff
 
 class DeliveryDashboardViewTests(TestCase):
     def setUp(self):
@@ -14,6 +14,13 @@ class DeliveryDashboardViewTests(TestCase):
             email='wh_sp@example.com',
         )
         self.staff = WarehouseStaff.objects.create(name='R. Santos')
+        self.backlog_reason, _ = BacklogReason.objects.get_or_create(
+            name='Customer requested reschedule',
+            defaults={
+                'reason_group': BacklogReason.GROUP_CUSTOMER,
+                'sort_order': 10,
+            },
+        )
         self.delivery = Delivery.objects.create(
             so_number='S.O. 4001', client='ACME', item='Laptop',
             area='Manila', ae='CSV', status=Delivery.STATUS_SCHEDULED,
@@ -50,6 +57,17 @@ class DeliveryDashboardViewTests(TestCase):
         self.assertEqual(len(van_details), 1)
         self.assertEqual(van_details[0]['driver_staff'], 'J. Cruz')
 
+    def test_dashboard_includes_backlog_summary(self):
+        self.delivery.status = Delivery.STATUS_FOR_SCHEDULE
+        self.delivery.remarks = 'Customer unavailable at scheduled slot.'
+        self.delivery.backlog_reason = self.backlog_reason
+        self.delivery.save()
+        self.client.force_login(self.warehouse_user)
+        response = self.client.get(reverse('warehouse:dashboard'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Active Backlog')
+        self.assertContains(response, self.backlog_reason.name)
+
     def test_export_requires_login(self):
         response = self.client.get(reverse('warehouse:export'))
         self.assertEqual(response.status_code, 302)
@@ -76,10 +94,13 @@ class DeliveryDashboardViewTests(TestCase):
             'item': 'Server',
             'area': 'Cebu',
             'ae': 'MGA',
+            'remarks': 'Waiting for customer schedule confirmation.',
             'status': Delivery.STATUS_FOR_SCHEDULE,
         })
         self.assertRedirects(response, reverse('warehouse:dashboard'))
-        self.assertTrue(Delivery.objects.filter(so_number='S.O. 4002').exists())
+        delivery = Delivery.objects.get(so_number='S.O. 4002')
+        self.assertEqual(delivery.events.count(), 1)
+        self.assertEqual(delivery.events.first().action, DeliveryEvent.ACTION_CREATED)
 
     def test_warehouse_role_can_update_delivery(self):
         self.client.force_login(self.warehouse_user)
@@ -92,22 +113,36 @@ class DeliveryDashboardViewTests(TestCase):
                 'area': self.delivery.area,
                 'ae': self.delivery.ae,
                 'warehouse_staff': self.staff.pk,
+                'backlog_reason': '',
+                'remarks': 'Delivered to customer receiving desk.',
                 'status': Delivery.STATUS_ACCOMPLISHED,
             },
         )
         self.assertRedirects(response, reverse('warehouse:dashboard'))
         self.delivery.refresh_from_db()
         self.assertEqual(self.delivery.status, Delivery.STATUS_ACCOMPLISHED)
+        latest_event = self.delivery.events.first()
+        self.assertEqual(latest_event.action, DeliveryEvent.ACTION_STATUS_CHANGED)
+        self.assertEqual(latest_event.changed_by, self.warehouse_user)
+        self.assertEqual(latest_event.remarks, 'Delivered to customer receiving desk.')
 
     def test_delivery_update_status_view(self):
         self.client.force_login(self.warehouse_user)
         response = self.client.post(
             reverse('warehouse:update_status', args=[self.delivery.pk]),
-            {'status': Delivery.STATUS_ACCOMPLISHED}
+            {
+                'status': Delivery.STATUS_ACCOMPLISHED,
+                'remarks': 'Completed and received by guard.',
+                'backlog_reason': '',
+            }
         )
         self.assertEqual(response.status_code, 200)
         self.delivery.refresh_from_db()
         self.assertEqual(self.delivery.status, Delivery.STATUS_ACCOMPLISHED)
+        self.assertEqual(self.delivery.remarks, 'Completed and received by guard.')
+        latest_event = self.delivery.events.first()
+        self.assertEqual(latest_event.action, DeliveryEvent.ACTION_STATUS_CHANGED)
+        self.assertEqual(latest_event.changed_by, self.warehouse_user)
 
     def test_delivery_update_status_forbidden_for_salesperson(self):
         self.client.force_login(self.salesperson)
@@ -116,6 +151,70 @@ class DeliveryDashboardViewTests(TestCase):
             {'status': Delivery.STATUS_ACCOMPLISHED}
         )
         self.assertEqual(response.status_code, 403)
+
+    def test_delivery_update_status_requires_completion_remarks(self):
+        self.client.force_login(self.warehouse_user)
+        response = self.client.post(
+            reverse('warehouse:update_status', args=[self.delivery.pk]),
+            {'status': Delivery.STATUS_ACCOMPLISHED},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.delivery.refresh_from_db()
+        self.assertEqual(self.delivery.status, Delivery.STATUS_SCHEDULED)
+
+    def test_delivery_update_status_requires_backlog_reason(self):
+        self.client.force_login(self.warehouse_user)
+        response = self.client.post(
+            reverse('warehouse:update_status', args=[self.delivery.pk]),
+            {
+                'status': Delivery.STATUS_FOR_SCHEDULE,
+                'remarks': 'Customer unavailable at agreed schedule.',
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.delivery.refresh_from_db()
+        self.assertEqual(self.delivery.status, Delivery.STATUS_SCHEDULED)
+
+    def test_delivery_update_status_accepts_backlog_reason(self):
+        self.client.force_login(self.warehouse_user)
+        response = self.client.post(
+            reverse('warehouse:update_status', args=[self.delivery.pk]),
+            {
+                'status': Delivery.STATUS_FOR_SCHEDULE,
+                'remarks': 'Customer unavailable at agreed schedule.',
+                'backlog_reason': str(self.backlog_reason.pk),
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.delivery.refresh_from_db()
+        self.assertEqual(self.delivery.status, Delivery.STATUS_FOR_SCHEDULE)
+        self.assertEqual(self.delivery.backlog_reason, self.backlog_reason)
+        latest_event = self.delivery.events.first()
+        self.assertEqual(latest_event.backlog_reason, self.backlog_reason.name)
+
+    def test_delivery_update_form_requires_scheduling_remarks(self):
+        self.delivery.status = Delivery.STATUS_FOR_SCHEDULE
+        self.delivery.save()
+        self.client.force_login(self.warehouse_user)
+        response = self.client.post(
+            reverse('warehouse:update', args=[self.delivery.pk]),
+            {
+                'so_number': self.delivery.so_number,
+                'client': self.delivery.client,
+                'item': self.delivery.item,
+                'area': self.delivery.area,
+                'ae': self.delivery.ae,
+                'warehouse_staff': self.staff.pk,
+                'backlog_reason': '',
+                'status': Delivery.STATUS_SCHEDULED,
+                'remarks': '',
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            'Please enter scheduling remarks before moving this delivery to Scheduled.',
+        )
 
     def test_warehouse_role_sees_quick_actions_for_scheduled(self):
         self.client.force_login(self.warehouse_user)
@@ -143,6 +242,34 @@ class DeliveryDashboardViewTests(TestCase):
         response = self.client.get(reverse('warehouse:dashboard'))
         self.assertContains(response, 'data-can-edit="0"')
         self.assertNotContains(response, '>New Delivery<')
+        self.assertNotContains(response, 'Backlog Categories')
+
+    def test_backlog_reason_list_accessible_to_warehouse(self):
+        self.client.force_login(self.warehouse_user)
+        response = self.client.get(reverse('warehouse:backlog_reason_list'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.backlog_reason.name)
+
+    def test_backlog_reason_list_forbidden_for_salesperson(self):
+        self.client.force_login(self.salesperson)
+        response = self.client.get(reverse('warehouse:backlog_reason_list'))
+        self.assertEqual(response.status_code, 403)
+
+    def test_warehouse_can_create_backlog_reason(self):
+        self.client.force_login(self.warehouse_user)
+        response = self.client.post(
+            reverse('warehouse:backlog_reason_create'),
+            {
+                'name': 'Warehouse reroute required',
+                'reason_group': BacklogReason.GROUP_LOGISTICS,
+                'sort_order': 20,
+                'is_active': 'on',
+            },
+        )
+        self.assertRedirects(response, reverse('warehouse:backlog_reason_list'))
+        self.assertTrue(
+            BacklogReason.objects.filter(name='Warehouse reroute required').exists()
+        )
 
 class DeliveryHistoryViewTests(TestCase):
     def setUp(self):
@@ -151,6 +278,13 @@ class DeliveryHistoryViewTests(TestCase):
             email='wh_hist@example.com',
         )
         self.staff = WarehouseStaff.objects.create(name='L. Bautista')
+        self.backlog_reason, _ = BacklogReason.objects.get_or_create(
+            name='AE confirmation pending',
+            defaults={
+                'reason_group': BacklogReason.GROUP_SALES,
+                'sort_order': 20,
+            },
+        )
         Delivery.objects.create(
             so_number='S.O. 5001', client='Done Corp', item='Printer',
             area='Makati', ae='CSV', status=Delivery.STATUS_ACCOMPLISHED,
@@ -182,6 +316,33 @@ class DeliveryHistoryViewTests(TestCase):
         self.client.force_login(outsider)
         response = self.client.get(reverse('warehouse:history'))
         self.assertEqual(response.status_code, 403)
+
+    def test_timeline_accessible_to_reader_roles(self):
+        delivery = Delivery.objects.get(so_number='S.O. 5001')
+        self.client.force_login(self.user)
+        response = self.client.get(reverse('warehouse:timeline', args=[delivery.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Delivery Timeline')
+        self.assertContains(response, delivery.so_number)
+
+    def test_timeline_shows_status_and_remark_history(self):
+        delivery = Delivery.objects.get(so_number='S.O. 5001')
+        delivery.remarks = 'Delivered to warehouse.'
+        delivery._event_user = self.user
+        delivery.save()
+        delivery.status = Delivery.STATUS_FOR_SCHEDULE
+        delivery.remarks = 'Customer requested reschedule.'
+        delivery.backlog_reason = self.backlog_reason
+        delivery._event_user = self.user
+        delivery._event_note = 'Customer requested reschedule.'
+        delivery.save()
+
+        self.client.force_login(self.user)
+        response = self.client.get(reverse('warehouse:timeline', args=[delivery.pk]))
+        self.assertContains(response, 'Remarks changed')
+        self.assertContains(response, 'Status changed')
+        self.assertContains(response, 'Customer requested reschedule.')
+        self.assertContains(response, self.backlog_reason.name)
 
 class WarehouseSoftLockTests(TestCase):
     def setUp(self):

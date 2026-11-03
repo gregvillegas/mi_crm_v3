@@ -115,7 +115,7 @@ echo "=========================================="
     print("1. data_dump.json (Database backup)")
     print("2. crm_project/local_settings_mysql.py (MySQL config template)")
     print("3. setup_mysql.sh (Script to run on the production server)")
-    print("4. apache_crm.conf (Apache configuration file)")
+    print("4. etc/micrm_nginx (nginx site configuration)")
     print("\nNext Steps for Production:")
     print("1. Copy this entire project to your production server.")
     print("2. Create the MySQL database and user:")

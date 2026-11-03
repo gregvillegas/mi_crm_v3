@@ -25,6 +25,38 @@
     }
     .section-yellow input[type="date"] { background-color: #fff; color: #3b2f00; }
     .section-green input[type="date"] { background-color: #fff; color: #155724; }
+
+    .backlog-summary-card ul { padding-left: 1rem; margin-bottom: 0; }
+    .backlog-summary-card li + li { margin-top: 0.25rem; }
+    .backlog-reason-tag {
+        display: inline-block;
+        margin-top: 0.25rem;
+        font-size: 0.75rem;
+        color: #6c757d;
+    }
+
+    .status-modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.35);
+        z-index: 1040;
+        display: none;
+    }
+    .status-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 1050;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+    }
+    .status-modal-card {
+        width: min(560px, 100%);
+        background: #fff;
+        border-radius: 0.75rem;
+        box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.18);
+    }
 </style>
 
 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
@@ -40,6 +72,9 @@
             <i class="fas fa-clock-rotate-left"></i> Delivery History
         </a>
         {% if can_edit %}
+            <a href="{% url 'warehouse:backlog_reason_list' %}" class="btn btn-sm btn-outline-secondary">
+                <i class="fas fa-tags"></i> Backlog Categories
+            </a>
             <a href="{% url 'warehouse:create' %}" class="btn btn-sm btn-primary">
                 <i class="fas fa-plus"></i> New Delivery
             </a>
@@ -50,6 +85,77 @@
                 <i class="fas fa-file-excel"></i> Export Excel
             </a>
         {% endif %}
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-12 col-lg-3">
+        <div class="card backlog-summary-card h-100">
+            <div class="card-header fw-semibold">Active Backlog</div>
+            <div class="card-body">
+                <div class="display-6 mb-2">{{ backlog_summary.total }}</div>
+                <div class="text-muted small">
+                    Items currently back in <strong>For Schedule</strong> after a failed or postponed move.
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-lg-3">
+        <div class="card backlog-summary-card h-100">
+            <div class="card-header fw-semibold">Top Reasons</div>
+            <div class="card-body small">
+                {% if backlog_summary.by_reason %}
+                    <ul>
+                        {% for item in backlog_summary.by_reason|slice:":5" %}
+                            <li>
+                                {{ item.backlog_reason__name|default:'Uncategorized' }}
+                                <span class="text-muted">({{ item.total }})</span>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    <div class="text-muted">No active backlog items.</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-lg-3">
+        <div class="card backlog-summary-card h-100">
+            <div class="card-header fw-semibold">By AE</div>
+            <div class="card-body small">
+                {% if backlog_summary.by_ae %}
+                    <ul>
+                        {% for item in backlog_summary.by_ae|slice:":5" %}
+                            <li>{{ item.ae|default:'—' }} <span class="text-muted">({{ item.total }})</span></li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    <div class="text-muted">No active backlog items.</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-lg-3">
+        <div class="card backlog-summary-card h-100">
+            <div class="card-header fw-semibold">By Area / Repeat Items</div>
+            <div class="card-body small">
+                {% if backlog_summary.by_area %}
+                    <div class="mb-2">
+                        {% for item in backlog_summary.by_area|slice:":3" %}
+                            <div>{{ item.area|default:'Unspecified' }} <span class="text-muted">({{ item.total }})</span></div>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+                {% if backlog_summary.repeat_items %}
+                    <div class="text-muted fw-semibold mt-2">Repeat backlog</div>
+                    {% for item in backlog_summary.repeat_items|slice:":3" %}
+                        <div>{{ item.so_number }} <span class="text-muted">({{ item.backlog_count }}x)</span></div>
+                    {% endfor %}
+                {% elif not backlog_summary.by_area %}
+                    <div class="text-muted">No active backlog items.</div>
+                {% endif %}
+            </div>
+        </div>
     </div>
 </div>
 
@@ -200,6 +306,40 @@
         </table>
     </div>
 </div>
+
+{% if can_edit %}
+<div id="status-modal-backdrop" class="status-modal-backdrop"></div>
+<div id="status-modal" class="status-modal" aria-hidden="true">
+    <div class="status-modal-card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <strong id="status-modal-title">Update delivery status</strong>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="status-modal-close">
+                Close
+            </button>
+        </div>
+        <div class="card-body">
+            <div class="mb-3 small text-muted" id="status-modal-hint"></div>
+            <div class="mb-3" id="status-modal-reason-wrap" style="display:none;">
+                <label for="status-modal-reason" class="form-label">Backlog category</label>
+                <select id="status-modal-reason" class="form-select">
+                    <option value="">---------</option>
+                    {% for reason in active_backlog_reasons %}
+                        <option value="{{ reason.id }}">{{ reason.name }} ({{ reason.get_reason_group_display }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="mb-3">
+                <label for="status-modal-remarks" class="form-label">Remarks</label>
+                <textarea id="status-modal-remarks" class="form-control" rows="3"></textarea>
+            </div>
+            <div class="d-flex justify-content-end gap-2">
+                <button type="button" class="btn btn-outline-secondary" id="status-modal-cancel">Cancel</button>
+                <button type="button" class="btn btn-primary" id="status-modal-submit">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block extra_js %}
@@ -219,9 +359,19 @@
     var board = document.getElementById('delivery-board');
     var CAN_EDIT = !!(board && board.dataset.canEdit === '1');
     var EDIT_URL_TEMPLATE = '{% url "warehouse:update" 0 %}';
+    var TIMELINE_URL_TEMPLATE = '{% url "warehouse:timeline" 0 %}';
     var COLUMN_COUNT = CAN_EDIT ? 9 : 8;
     var RECONNECT_MS = 3000;
     var FLASH_MS = 1500;
+    var statusModal = document.getElementById('status-modal');
+    var statusBackdrop = document.getElementById('status-modal-backdrop');
+    var statusTitle = document.getElementById('status-modal-title');
+    var statusHint = document.getElementById('status-modal-hint');
+    var statusRemarks = document.getElementById('status-modal-remarks');
+    var statusReasonWrap = document.getElementById('status-modal-reason-wrap');
+    var statusReason = document.getElementById('status-modal-reason');
+    var statusSubmit = document.getElementById('status-modal-submit');
+    var pendingStatusChange = null;
 
     function tbodyFor(status) {
         var id = SECTION_TBODY[status];
@@ -243,7 +393,14 @@
         tr.dataset.driver = d.driver_staff || '';
         tr.dataset.status = d.status;
 
-        var soCell = makeCell(d.so_number, 'fw-semibold text-nowrap');
+        var soCell = document.createElement('td');
+        soCell.className = 'fw-semibold text-nowrap';
+        var soLink = document.createElement('a');
+        soLink.href = TIMELINE_URL_TEMPLATE.replace('/0/', '/' + d.id + '/');
+        soLink.className = 'link-dark text-decoration-none';
+        soLink.title = 'View delivery timeline';
+        soLink.textContent = d.so_number;
+        soCell.appendChild(soLink);
         if (d.is_backlog) {
             var badge = document.createElement('span');
             badge.className = 'badge bg-danger ms-1';
@@ -275,6 +432,12 @@
             remarks.appendChild(span);
         } else {
             remarks.textContent = d.remarks || '';
+        }
+        if (d.backlog_reason) {
+            var reasonTag = document.createElement('div');
+            reasonTag.className = 'backlog-reason-tag';
+            reasonTag.textContent = 'Category: ' + d.backlog_reason;
+            remarks.appendChild(reasonTag);
         }
         tr.appendChild(remarks);
 
@@ -405,6 +568,34 @@
         window.setTimeout(function () { tr.classList.remove('row-flash'); }, FLASH_MS);
     }
 
+    function closeStatusModal() {
+        if (!statusModal || !statusBackdrop) { return; }
+        statusModal.style.display = 'none';
+        statusBackdrop.style.display = 'none';
+        statusModal.setAttribute('aria-hidden', 'true');
+        if (statusRemarks) { statusRemarks.value = ''; }
+        if (statusReason) { statusReason.value = ''; }
+        pendingStatusChange = null;
+    }
+
+    function openStatusModal(config) {
+        if (!statusModal || !statusBackdrop) { return; }
+        pendingStatusChange = config;
+        statusTitle.textContent = config.title;
+        statusHint.textContent = config.hint;
+        statusRemarks.value = '';
+        if (config.requireReason) {
+            statusReasonWrap.style.display = '';
+        } else {
+            statusReasonWrap.style.display = 'none';
+            statusReason.value = '';
+        }
+        statusModal.style.display = 'flex';
+        statusBackdrop.style.display = 'block';
+        statusModal.setAttribute('aria-hidden', 'false');
+        statusRemarks.focus();
+    }
+
     function applyEvent(payload) {
         var d = payload && payload.delivery;
         if (!d) { return; }
@@ -437,32 +628,67 @@
 
     // Event delegation for quick status buttons
     if (board && CAN_EDIT) {
+        document.getElementById('status-modal-close').addEventListener('click', closeStatusModal);
+        document.getElementById('status-modal-cancel').addEventListener('click', closeStatusModal);
+        statusBackdrop.addEventListener('click', closeStatusModal);
+        statusSubmit.addEventListener('click', function () {
+            if (!pendingStatusChange) { return; }
+
+            var remarks = (statusRemarks.value || '').trim();
+            var reasonId = statusReason ? statusReason.value : '';
+
+            if (!remarks) {
+                alert('Remarks are required for this status change.');
+                return;
+            }
+            if (pendingStatusChange.requireReason && !reasonId) {
+                alert('Please select a backlog category.');
+                return;
+            }
+
+            pendingStatusChange.button.disabled = true;
+
+            fetch('/warehouse/' + pendingStatusChange.id + '/update-status/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                },
+                body:
+                    'status=' + encodeURIComponent(pendingStatusChange.status) +
+                    '&remarks=' + encodeURIComponent(remarks) +
+                    '&backlog_reason=' + encodeURIComponent(reasonId)
+            }).then(function (response) {
+                if (!response.ok) {
+                    return response.json().catch(function () {
+                        return { error: 'Failed to update status.' };
+                    }).then(function (payload) {
+                        pendingStatusChange.button.disabled = false;
+                        alert(payload.error || 'Failed to update status.');
+                    });
+                }
+                closeStatusModal();
+            }).catch(function (err) {
+                pendingStatusChange.button.disabled = false;
+                console.error(err);
+            });
+        });
+
         board.addEventListener('click', function (e) {
             var btn = e.target.closest('.quick-status-btn');
             if (!btn) { return; }
 
             var id = btn.dataset.deliveryId;
             var status = btn.dataset.status;
-            var csrf = document.querySelector('[name=csrfmiddlewaretoken]').value;
-
-            btn.disabled = true;
-
-            fetch('/warehouse/' + id + '/update-status/', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'X-CSRFToken': csrf
-                },
-                body: 'status=' + encodeURIComponent(status)
-            }).then(function (response) {
-                if (!response.ok) {
-                    btn.disabled = false;
-                    alert('Failed to update status.');
-                }
-                // WebSocket will handle the row move
-            }).catch(function (err) {
-                btn.disabled = false;
-                console.error(err);
+            openStatusModal({
+                id: id,
+                status: status,
+                button: btn,
+                requireReason: status === 'FOR_SCHEDULE',
+                title: status === 'FOR_SCHEDULE' ? 'Move back to For Schedule' : 'Mark as Accomplished',
+                hint: status === 'FOR_SCHEDULE'
+                    ? 'Capture both the backlog category and the specific reason so the item can be reported and improved later.'
+                    : 'Record the final delivery outcome before closing the item.'
             });
         });
     }

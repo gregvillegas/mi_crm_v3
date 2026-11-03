@@ -109,7 +109,7 @@ The file sharing feature integrates seamlessly with the existing CRM:
 - Automatic cleanup when files are deleted through the interface
 
 ## Next Steps for Production
-1. Configure secure file serving (nginx/Apache)
+1. Configure secure file serving (nginx)
 2. Set up proper backup strategy for uploaded files
 3. Consider cloud storage integration (AWS S3, etc.)
 4. Implement file versioning if needed

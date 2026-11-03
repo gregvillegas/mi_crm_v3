@@ -18,6 +18,7 @@
         <table class="table table-sm table-hover align-middle mb-0">
             <thead class="table-light">
                 <tr>
+                    <th>SO #</th>
                     <th>DATE</th>
                     <th>STATUS</th>
                     <th>COMPANY</th>
@@ -30,6 +31,11 @@
             <tbody>
                 {% for d in page_obj %}
                     <tr>
+                        <td class="fw-semibold text-nowrap">
+                            <a href="{% url 'warehouse:timeline' d.id %}" class="link-dark text-decoration-none" title="View delivery timeline">
+                                {{ d.so_number }}
+                            </a>
+                        </td>
                         <td class="text-nowrap">
                             {% if d.status == 'ACCOMPLISHED' %}
                                 {{ d.accomplished_date|date:"Y-m-d" }}

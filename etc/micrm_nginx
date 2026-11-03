@@ -107,6 +107,33 @@ server {
         access_log off;
     }
 
+    # WebSocket — Warehouse Deliveries real-time feed -> Daphne (ASGI)
+    #
+    # Gunicorn is a WSGI server and cannot upgrade a connection to WebSocket,
+    # so /ws/ is proxied to the Daphne service listening on 127.0.0.1:8001
+    # instead of the gunicorn socket. This prefix location is longer than
+    # "location /", so nginx routes /ws/ here and everything else to gunicorn.
+    location /ws/ {
+        proxy_pass http://127.0.0.1:8001;
+
+        # Required for the HTTP -> WebSocket upgrade handshake
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
+
+        # WebSockets are long-lived: do not time them out like normal requests
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_buffering off;
+    }
+
     # Proxy to your application (example for Django/Gunicorn)
     location / {
 	#proxy_pass http://127.0.0.1:8000;

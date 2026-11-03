@@ -21,6 +21,9 @@ export visibility works.
 - **Real-time:** every create / update / delete is pushed to every open board
   over a WebSocket (Django Channels), so a status change made by the warehouse
   office shows up instantly on the sales team's screen without a refresh.
+- **Connection badge:** the header badge normally settles on **Live**. A short
+  **Reconnecting...** during page load, restart, or a brief network interruption
+  is expected if it quickly returns to **Live**.
 - **Who can see it:** every internal role **except** none — the board is open to
   all roles in `DELIVERY_VIEWER_ROLES` (§7). The only role locked **out** of the
   rest of the CRM is `warehouse` (§8).
@@ -160,6 +163,13 @@ warehouse/models.py  ──post_save / post_delete──▶  warehouse/signals.p
   (single-process dev only). A failed broadcast is logged and swallowed so it can
   never break the save that triggered it.
 - `daphne` is listed first in `INSTALLED_APPS` so `runserver` serves ASGI in dev.
+
+> **Deploying?** Gunicorn is WSGI-only and cannot serve `/ws/`. On
+> stage/production you must run Daphne as a separate ASGI service, install Redis,
+> and reverse-proxy `/ws/` from nginx. If Redis, `mi_crm_daphne`, and the nginx
+> `/ws/` block are already working on the server, use that section as a
+> verification checklist rather than a rebuild-from-scratch guide. Full steps:
+> [PRODUCTION_DEPLOY.md §8](PRODUCTION_DEPLOY.md#8-real-time-websockets-daphne--redis).
 
 ---
 
