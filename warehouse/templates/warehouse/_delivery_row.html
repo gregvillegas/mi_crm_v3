@@ -6,7 +6,9 @@
     data-so="{{ d.so_number }}"
     data-plate="{{ d.vehicle_plate|default:'' }}"
     data-driver="{{ d.driver_staff|default:'' }}"
-    data-status="{{ d.status }}">
+    data-status="{{ d.status }}"
+    data-scheduled-date="{% if d.scheduled_date %}{{ d.scheduled_date|date:'Y-m-d' }}{% endif %}"
+    data-accomplished-date="{% if d.accomplished_date %}{{ d.accomplished_date|date:'Y-m-d' }}{% endif %}">
     <td class="fw-semibold text-nowrap">
         <a href="{% url 'warehouse:timeline' d.id %}" class="link-dark text-decoration-none" title="View delivery timeline">
             {{ d.so_number }}

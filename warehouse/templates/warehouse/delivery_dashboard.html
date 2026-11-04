@@ -25,6 +25,37 @@
     }
     .section-yellow input[type="date"] { background-color: #fff; color: #3b2f00; }
     .section-green input[type="date"] { background-color: #fff; color: #155724; }
+    .section-header-main,
+    .section-header-tools {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+    .section-header-tools {
+        justify-content: flex-end;
+    }
+    .scheduled-import-form {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        margin: 0;
+    }
+    .scheduled-import-form .btn {
+        white-space: nowrap;
+    }
+    .scheduled-import-input {
+        display: none;
+    }
+    @media (max-width: 768px) {
+        .section-header-tools {
+            justify-content: flex-start;
+            width: 100%;
+        }
+        .scheduled-import-form {
+            width: auto;
+        }
+    }
 
     .backlog-summary-card ul { padding-left: 1rem; margin-bottom: 0; }
     .backlog-summary-card li + li { margin-top: 0.25rem; }
@@ -49,13 +80,72 @@
         display: none;
         align-items: center;
         justify-content: center;
-        padding: 1rem;
+        padding: 1.25rem;
+        overflow-y: auto;
     }
     .status-modal-card {
-        width: min(560px, 100%);
+        width: min(760px, calc(100vw - 2.5rem));
+        max-height: calc(100vh - 2.5rem);
         background: #fff;
         border-radius: 0.75rem;
         box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.18);
+        display: flex;
+        flex-direction: column;
+    }
+    .status-modal-card .card-header {
+        padding: 1rem 1.25rem;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+    .status-modal-card .card-body {
+        padding: 1.25rem;
+        overflow-y: auto;
+    }
+    .status-modal-card .form-label {
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+    }
+    .status-modal-card .form-text {
+        margin-top: 0.5rem;
+    }
+    .status-modal-card textarea.form-control {
+        min-height: 8rem;
+        resize: vertical;
+    }
+    .status-modal-card #status-modal-close,
+    .status-modal-card #status-modal-cancel,
+    .status-modal-card #status-modal-submit {
+        min-width: 7.5rem;
+    }
+    .status-modal-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+        padding-top: 0.25rem;
+    }
+    @media (max-width: 576px) {
+        .status-modal {
+            padding: 0.75rem;
+            align-items: flex-start;
+        }
+        .status-modal-card {
+            width: 100%;
+            max-height: calc(100vh - 1.5rem);
+        }
+        .status-modal-card .card-header,
+        .status-modal-card .card-body {
+            padding: 1rem;
+        }
+        .status-modal-card #status-modal-close,
+        .status-modal-card #status-modal-cancel,
+        .status-modal-card #status-modal-submit {
+            width: 100%;
+        }
+        .status-modal-actions {
+            flex-direction: column-reverse;
+            align-items: stretch;
+        }
     }
 </style>
 
@@ -159,7 +249,9 @@
     </div>
 </div>
 
-<div id="delivery-board" data-can-edit="{% if can_edit %}1{% else %}0{% endif %}">
+<div id="delivery-board"
+     data-can-edit="{% if can_edit %}1{% else %}0{% endif %}"
+     data-selected-date="{{ selected_date|date:'Y-m-d' }}">
     {% csrf_token %}
 
 {# ---------------- Section 1: FOR SCHEDULE ---------------- #}
@@ -200,16 +292,39 @@
 
 {# ---------------- Section 2: SCHEDULED DELIVERY ---------------- #}
 <div class="card mb-4">
-    <div class="card-header section-yellow d-flex justify-content-between align-items-center">
-        <span>
+    <div class="card-header section-yellow d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div class="section-header-main">
             <i class="fas fa-clipboard-check me-1"></i> SCHEDULED DELIVERY
             <input type="date" value="{{ selected_date|date:'Y-m-d' }}" 
                    class="ms-2 section-date-picker" data-target-offset="0"
                    onchange="window.location.href='?date=' + this.value">
-        </span>
-        <span class="badge bg-light text-dark" data-count-for="SCHEDULED">
-            {{ scheduled|length }} item(s)
-        </span>
+        </div>
+        <div class="section-header-tools">
+            {% if can_edit %}
+                <form method="post"
+                      action="{% url 'warehouse:import_scheduled' %}"
+                      enctype="multipart/form-data"
+                      class="scheduled-import-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="selected_date" value="{{ selected_date|date:'Y-m-d' }}">
+                    <input type="file"
+                           id="scheduled-import-file"
+                           name="file"
+                           class="scheduled-import-input"
+                           accept=".xlsx,.xlsm,.csv"
+                           aria-label="Import Scheduled Delivery Excel or CSV"
+                           title="Import the SCHEDULED DELIVERY Excel sheet or a CSV with matching columns"
+                           onchange="if (this.files.length) { this.form.submit(); }"
+                           required>
+                    <label for="scheduled-import-file" class="btn btn-sm btn-outline-dark mb-0">
+                        <i class="fas fa-file-import me-1"></i> Import File
+                    </label>
+                </form>
+            {% endif %}
+            <span class="badge bg-light text-dark" data-count-for="SCHEDULED">
+                {{ scheduled|length }} item(s)
+            </span>
+        </div>
     </div>
     <div class="table-responsive">
         <table class="table table-sm table-hover align-middle delivery-table mb-0">
@@ -250,9 +365,11 @@
                 </thead>
                 <tbody id="van-details-body">
                     {% for van in van_details %}
-                        <tr data-plate="{{ van.vehicle_plate }}" data-driver="{{ van.driver_staff }}">
+                        <tr data-plate="{{ van.vehicle_plate }}"
+                            data-driver="{{ van.driver_staff }}"
+                            data-staff="{{ van.warehouse_staff }}">
                             <td class="fw-semibold">{{ van.vehicle_plate|default:'—' }}</td>
-                            <td>{{ van.driver_staff|default:'—' }}</td>
+                            <td>{{ van.driver_staff_display|default:'—' }}</td>
                             <td class="text-end">{{ van.count }}</td>
                         </tr>
                     {% empty %}
@@ -328,11 +445,18 @@
                     {% endfor %}
                 </select>
             </div>
+            <div class="mb-3" id="status-modal-date-wrap" style="display:none;">
+                <label for="status-modal-date" class="form-label">Accomplished date</label>
+                <input type="date" id="status-modal-date" class="form-control">
+                <div class="form-text">
+                    Use the actual delivery date when you are marking an item complete late.
+                </div>
+            </div>
             <div class="mb-3">
                 <label for="status-modal-remarks" class="form-label">Remarks</label>
                 <textarea id="status-modal-remarks" class="form-control" rows="3"></textarea>
             </div>
-            <div class="d-flex justify-content-end gap-2">
+            <div class="status-modal-actions">
                 <button type="button" class="btn btn-outline-secondary" id="status-modal-cancel">Cancel</button>
                 <button type="button" class="btn btn-primary" id="status-modal-submit">Save</button>
             </div>
@@ -370,6 +494,8 @@
     var statusRemarks = document.getElementById('status-modal-remarks');
     var statusReasonWrap = document.getElementById('status-modal-reason-wrap');
     var statusReason = document.getElementById('status-modal-reason');
+    var statusDateWrap = document.getElementById('status-modal-date-wrap');
+    var statusDate = document.getElementById('status-modal-date');
     var statusSubmit = document.getElementById('status-modal-submit');
     var pendingStatusChange = null;
 
@@ -391,7 +517,10 @@
         tr.dataset.so = d.so_number;
         tr.dataset.plate = d.vehicle_plate || '';
         tr.dataset.driver = d.driver_staff || '';
+        tr.dataset.staff = d.warehouse_staff || '';
         tr.dataset.status = d.status;
+        tr.dataset.scheduledDate = d.scheduled_date || '';
+        tr.dataset.accomplishedDate = d.accomplished_date || '';
 
         var soCell = document.createElement('td');
         soCell.className = 'fw-semibold text-nowrap';
@@ -514,7 +643,7 @@
     }
 
     // Rebuild the VAN DETAILS footer from whatever is currently in the
-    // Scheduled table, grouped by vehicle plate + driver.
+    // Scheduled table, grouped by vehicle plate + driver/staff pair.
     function refreshVanDetails() {
         var tbody = document.getElementById('tbody-scheduled');
         var body = document.getElementById('van-details-body');
@@ -526,10 +655,18 @@
             function (tr) {
                 var plate = (tr.dataset.plate || '').trim();
                 var driver = (tr.dataset.driver || '').trim();
-                if (!plate && !driver) { return; }
-                var key = plate + '||' + driver;
+                var staff = (tr.dataset.staff || '').trim();
+                if (!plate && !driver && !staff) { return; }
+                var key = plate + '||' + driver + '||' + staff;
                 if (!grouped[key]) {
-                    grouped[key] = { plate: plate, driver: driver, count: 0, so: [] };
+                    grouped[key] = {
+                        plate: plate,
+                        driver: driver,
+                        staff: staff,
+                        display: driver && staff ? (driver + ' - ' + staff) : (driver || staff),
+                        count: 0,
+                        so: []
+                    };
                 }
                 grouped[key].count += 1;
                 grouped[key].so.push(tr.dataset.so);
@@ -556,8 +693,9 @@
             var tr = document.createElement('tr');
             tr.dataset.plate = van.plate;
             tr.dataset.driver = van.driver;
+            tr.dataset.staff = van.staff;
             tr.appendChild(makeCell(van.plate || '—', 'fw-semibold'));
-            tr.appendChild(makeCell(van.driver || '—'));
+            tr.appendChild(makeCell(van.display || '—'));
             tr.appendChild(makeCell(String(van.count), 'text-end'));
             body.appendChild(tr);
         });
@@ -575,6 +713,7 @@
         statusModal.setAttribute('aria-hidden', 'true');
         if (statusRemarks) { statusRemarks.value = ''; }
         if (statusReason) { statusReason.value = ''; }
+        if (statusDate) { statusDate.value = ''; }
         pendingStatusChange = null;
     }
 
@@ -590,10 +729,17 @@
             statusReasonWrap.style.display = 'none';
             statusReason.value = '';
         }
+        if (config.requireDate) {
+            statusDateWrap.style.display = '';
+            statusDate.value = config.defaultDate || '';
+        } else {
+            statusDateWrap.style.display = 'none';
+            statusDate.value = '';
+        }
         statusModal.style.display = 'flex';
         statusBackdrop.style.display = 'block';
         statusModal.setAttribute('aria-hidden', 'false');
-        statusRemarks.focus();
+        (config.requireDate ? statusDate : statusRemarks).focus();
     }
 
     function applyEvent(payload) {
@@ -636,6 +782,7 @@
 
             var remarks = (statusRemarks.value || '').trim();
             var reasonId = statusReason ? statusReason.value : '';
+            var accomplishedDate = statusDate ? statusDate.value : '';
 
             if (!remarks) {
                 alert('Remarks are required for this status change.');
@@ -643,6 +790,10 @@
             }
             if (pendingStatusChange.requireReason && !reasonId) {
                 alert('Please select a backlog category.');
+                return;
+            }
+            if (pendingStatusChange.requireDate && !accomplishedDate) {
+                alert('Please select the actual accomplished date.');
                 return;
             }
 
@@ -657,7 +808,8 @@
                 body:
                     'status=' + encodeURIComponent(pendingStatusChange.status) +
                     '&remarks=' + encodeURIComponent(remarks) +
-                    '&backlog_reason=' + encodeURIComponent(reasonId)
+                    '&backlog_reason=' + encodeURIComponent(reasonId) +
+                    '&accomplished_date=' + encodeURIComponent(accomplishedDate)
             }).then(function (response) {
                 if (!response.ok) {
                     return response.json().catch(function () {
@@ -680,15 +832,27 @@
 
             var id = btn.dataset.deliveryId;
             var status = btn.dataset.status;
+            var row = btn.closest('tr[data-delivery-id]');
+            var defaultAccomplishedDate = '';
+
+            if (status === 'ACCOMPLISHED') {
+                defaultAccomplishedDate =
+                    (row && row.dataset.scheduledDate) ||
+                    (board && board.dataset.selectedDate) ||
+                    '';
+            }
+
             openStatusModal({
                 id: id,
                 status: status,
                 button: btn,
                 requireReason: status === 'FOR_SCHEDULE',
+                requireDate: status === 'ACCOMPLISHED',
+                defaultDate: defaultAccomplishedDate,
                 title: status === 'FOR_SCHEDULE' ? 'Move back to For Schedule' : 'Mark as Accomplished',
                 hint: status === 'FOR_SCHEDULE'
                     ? 'Capture both the backlog category and the specific reason so the item can be reported and improved later.'
-                    : 'Record the final delivery outcome before closing the item.'
+                    : 'Record the final delivery outcome and set the actual accomplished date before closing the item.'
             });
         });
     }

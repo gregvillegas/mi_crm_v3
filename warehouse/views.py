@@ -6,11 +6,16 @@ from django.core.paginator import Paginator
 from django.db.models import Count
 from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.views.decorators.http import require_POST
 
-from .forms import BacklogReasonForm, DeliveryForm
+from .forms import BacklogReasonForm, DeliveryForm, ScheduledDeliveryImportForm
+from .importers import (
+    ScheduledDeliveryImportError,
+    import_scheduled_delivery_file,
+)
 from .models import (
     BacklogReason,
     Delivery,
@@ -109,25 +114,30 @@ def _backlog_summary():
 
 def _build_van_details(deliveries):
     """
-    Group the scheduled deliveries by (vehicle plate, driver) to generate the
-    VAN DETAILS footer under the "Scheduled Delivery" table.
+    Group the scheduled deliveries by (vehicle plate, driver, warehouse staff)
+    to generate the VAN DETAILS footer under the "Scheduled Delivery" table.
     """
     grouped = {}
     for delivery in deliveries:
         plate = (delivery.vehicle_plate or '').strip()
         driver = (delivery.driver_staff or '').strip()
-        if not plate and not driver:
+        staff = (delivery.warehouse_staff_name or '').strip()
+        if not plate and not driver and not staff:
             continue
-        grouped.setdefault((plate, driver), []).append(delivery.so_number)
+        grouped.setdefault((plate, driver, staff), []).append(delivery.so_number)
 
     return [
         {
             'vehicle_plate': plate,
             'driver_staff': driver,
+            'warehouse_staff': staff,
+            'driver_staff_display': (
+                f'{driver} - {staff}' if driver and staff else driver or staff
+            ),
             'count': len(so_numbers),
             'so_numbers': so_numbers,
         }
-        for (plate, driver), so_numbers in grouped.items()
+        for (plate, driver, staff), so_numbers in grouped.items()
     ]
 
 
@@ -371,11 +381,22 @@ def delivery_update_status(request, pk):
     delivery = get_object_or_404(Delivery, pk=pk)
     new_status = request.POST.get('status')
     remarks = (request.POST.get('remarks') or '').strip()
+    accomplished_date = None
+    accomplished_date_raw = (request.POST.get('accomplished_date') or '').strip()
     backlog_reason = None
     backlog_reason_id = request.POST.get('backlog_reason') or ''
 
     if new_status not in dict(Delivery.STATUS_CHOICES):
         return JsonResponse({'error': 'Invalid status'}, status=400)
+    if accomplished_date_raw:
+        accomplished_date = parse_date(accomplished_date_raw)
+        if accomplished_date is None:
+            return JsonResponse({'error': 'Invalid accomplished date'}, status=400)
+    if new_status == Delivery.STATUS_ACCOMPLISHED and accomplished_date is None:
+        return JsonResponse(
+            {'error': 'Please select the actual accomplished date.'},
+            status=400,
+        )
     if backlog_reason_id:
         backlog_reason = BacklogReason.objects.filter(pk=backlog_reason_id).first()
         if backlog_reason is None:
@@ -391,6 +412,8 @@ def delivery_update_status(request, pk):
         return JsonResponse({'error': reason_error}, status=400)
 
     delivery.status = new_status
+    if new_status == Delivery.STATUS_ACCOMPLISHED:
+        delivery.accomplished_date = accomplished_date
     if remarks:
         delivery.remarks = remarks
         delivery._event_note = remarks
@@ -412,6 +435,10 @@ def delivery_update_status(request, pk):
             'new_status': delivery.status,
             'remarks': delivery.remarks or '',
             'backlog_reason': delivery.backlog_reason_name,
+            'accomplished_date': (
+                delivery.accomplished_date.isoformat()
+                if delivery.accomplished_date else ''
+            ),
         }
     )
 
@@ -506,3 +533,49 @@ def export_deliveries_excel(request):
     response['Content-Disposition'] = f'attachment; filename="deliveries_{stamp}.xlsx"'
     wb.save(response)
     return response
+
+
+@login_required
+@require_POST
+def import_scheduled_deliveries(request):
+    """Upload scheduled deliveries from the legacy Excel/CSV process."""
+    if not can_edit_deliveries(request.user):
+        return HttpResponseForbidden(
+            "You don't have permission to import scheduled deliveries."
+        )
+
+    selected_date = parse_date(request.POST.get('selected_date') or '')
+    selected_date = selected_date or timezone.localdate()
+    form = ScheduledDeliveryImportForm(request.POST, request.FILES)
+
+    if not form.is_valid():
+        for errors in form.errors.values():
+            for error in errors:
+                messages.error(request, error)
+        return redirect(
+            f"{reverse('warehouse:dashboard')}?date={selected_date.isoformat()}"
+        )
+
+    upload = form.cleaned_data['file']
+    try:
+        summary = import_scheduled_delivery_file(
+            upload,
+            fallback_date=selected_date,
+            actor=request.user,
+        )
+    except ScheduledDeliveryImportError as exc:
+        messages.error(request, str(exc))
+        return redirect(
+            f"{reverse('warehouse:dashboard')}?date={selected_date.isoformat()}"
+        )
+
+    import_date = summary['scheduled_date']
+    messages.success(
+        request,
+        (
+            f'Imported {summary["processed"]} scheduled delivery row(s) for '
+            f'{import_date:%b %d, %Y}: {summary["created"]} new, '
+            f'{summary["updated"]} updated, {summary["unchanged"]} unchanged.'
+        ),
+    )
+    return redirect(f"{reverse('warehouse:dashboard')}?date={import_date.isoformat()}")

@@ -19,6 +19,11 @@ urlpatterns = [
         name='backlog_reason_update',
     ),
     path('new/', views.delivery_create, name='create'),
+    path(
+        'scheduled/import/',
+        views.import_scheduled_deliveries,
+        name='import_scheduled',
+    ),
     path('<int:pk>/timeline/', views.delivery_timeline, name='timeline'),
     path('<int:pk>/edit/', views.delivery_update, name='update'),
     path('<int:pk>/update-status/', views.delivery_update_status, name='update_status'),

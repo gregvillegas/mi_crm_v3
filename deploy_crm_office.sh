@@ -102,7 +102,7 @@ sudo systemctl restart $GUNICORN_SERVICE
 echo '--- gunicorn status ---'
 sudo systemctl is-active $GUNICORN_SERVICE
 
-if sudo systemctl list-unit-files | grep -q "^$DAPHNE_SERVICE\\.service"; then
+if sudo systemctl cat "$DAPHNE_SERVICE" >/dev/null 2>&1; then
     echo '--- restart daphne ---'
     sudo systemctl restart $DAPHNE_SERVICE
 

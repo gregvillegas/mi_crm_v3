@@ -86,3 +86,18 @@ class BacklogReasonForm(forms.ModelForm):
     class Meta:
         model = BacklogReason
         fields = ['name', 'reason_group', 'sort_order', 'is_active']
+
+
+class ScheduledDeliveryImportForm(forms.Form):
+    """Upload form for staged migration from Excel/CSV into the dashboard."""
+
+    file = forms.FileField()
+
+    def clean_file(self):
+        uploaded_file = self.cleaned_data['file']
+        file_name = (uploaded_file.name or '').lower()
+        if not file_name.endswith(('.xlsx', '.xlsm', '.csv')):
+            raise forms.ValidationError(
+                'Please upload an .xlsx, .xlsm, or .csv file.'
+            )
+        return uploaded_file
