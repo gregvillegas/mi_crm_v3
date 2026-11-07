@@ -448,9 +448,10 @@ class DeliveryHistoryViewTests(TestCase):
                 'sort_order': 20,
             },
         )
-        Delivery.objects.create(
+        self.completed_delivery = Delivery.objects.create(
             so_number='S.O. 5001', client='Done Corp', item='Printer',
             area='Makati', ae='CSV', status=Delivery.STATUS_ACCOMPLISHED,
+            accomplished_date=date(2026, 11, 5),
             driver_staff='J. Cruz', warehouse_staff=self.staff,
         )
         Delivery.objects.create(
@@ -470,6 +471,93 @@ class DeliveryHistoryViewTests(TestCase):
         self.assertContains(response, 'Printer')
         self.assertContains(response, 'J. Cruz')
         self.assertContains(response, 'L. Bautista')
+
+    def test_history_filters_by_company_ae_date_and_item(self):
+        self.client.force_login(self.user)
+        filters = (
+            {'company': 'Done C'},
+            {'ae': 'CS'},
+            {'date': '2026-11-05'},
+            {'item': 'Print'},
+        )
+
+        for filter_params in filters:
+            with self.subTest(filter_params=filter_params):
+                response = self.client.get(
+                    reverse('warehouse:history'), filter_params
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(
+                    list(response.context['page_obj'].object_list),
+                    [self.completed_delivery],
+                )
+                self.assertEqual(response.context['total_count'], 1)
+
+    def test_history_date_filter_matches_scheduled_delivery_date(self):
+        scheduled_delivery = Delivery.objects.create(
+            so_number='S.O. 5003',
+            client='Scheduled Corp',
+            item='Monitor',
+            area='Pasig',
+            ae='MGA',
+            status=Delivery.STATUS_SCHEDULED,
+            scheduled_date=date(2026, 11, 6),
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(
+            reverse('warehouse:history'), {'date': '2026-11-06'}
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            list(response.context['page_obj'].object_list),
+            [scheduled_delivery],
+        )
+
+    def test_history_first_page_pagination_does_not_raise_empty_page(self):
+        for index in range(60):
+            Delivery.objects.create(
+                so_number=f'S.O. H{index:04d}',
+                client=f'History Client {index}',
+                item='Monitor',
+                area='Pasig',
+                ae='CSV',
+                status=Delivery.STATUS_SCHEDULED,
+                scheduled_date=date(2026, 11, 5),
+            )
+
+        self.client.force_login(self.user)
+        response = self.client.get(reverse('warehouse:history'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Page 1 of')
+        self.assertContains(response, '?page=1">Previous</a>', html=False)
+
+    def test_history_pagination_preserves_active_filters(self):
+        for index in range(51):
+            Delivery.objects.create(
+                so_number=f'S.O. F{index:04d}',
+                client=f'Filter Corp {index}',
+                item='Monitor',
+                area='Pasig',
+                ae='XYZ',
+                status=Delivery.STATUS_SCHEDULED,
+                scheduled_date=date(2026, 11, 5),
+            )
+
+        self.client.force_login(self.user)
+        response = self.client.get(
+            reverse('warehouse:history'),
+            {'company': 'Filter', 'ae': 'XY'},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['total_count'], 51)
+        self.assertContains(
+            response,
+            '?company=Filter&amp;ae=XY&amp;page=2',
+            html=False,
+        )
 
     def test_history_forbidden_for_role_outside_monitoring_gate(self):
         outsider = User.objects.create_user(

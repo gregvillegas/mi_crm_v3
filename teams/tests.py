@@ -1,6 +1,7 @@
 from decimal import Decimal
 
-from django.test import TestCase
+from django.test import Client, TestCase
+from django.urls import reverse
 
 from customers.models import Customer
 from customers.permissions import visible_customers_queryset
@@ -248,3 +249,91 @@ class TechnicalSalesScopingTests(TestCase):
             unit_price=unit_price,
         )
         return proposal
+
+
+class QuotaManagementExecutiveAccessTests(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.avp_a = User.objects.create_user(
+            username='quota_avp_a', password='pass', role='avp'
+        )
+        self.avp_b = User.objects.create_user(
+            username='quota_avp_b', password='pass', role='avp'
+        )
+        self.supervisor = User.objects.create_user(
+            username='quota_supervisor', password='pass', role='supervisor'
+        )
+        self.team_a = Team.objects.create(name='Quota Team A', avp=self.avp_a)
+        self.team_b = Team.objects.create(name='Quota Team B', avp=self.avp_b)
+        self.group_a = Group.objects.create(
+            name='Quota Group A',
+            team=self.team_a,
+            group_type='regular',
+            supervisor=self.supervisor,
+        )
+        Group.objects.create(
+            name='Quota Group B',
+            team=self.team_b,
+            group_type='regular',
+            supervisor=self.supervisor,
+        )
+        self.salesperson = User.objects.create_user(
+            username='quota_salesperson', password='pass', role='salesperson'
+        )
+        self.membership = TeamMembership.objects.create(
+            user=self.salesperson,
+            group=self.group_a,
+            quota=Decimal('100000.00'),
+        )
+
+    def test_gm_and_vp_can_manage_quotas_for_all_teams(self):
+        for role in ('gm', 'vp'):
+            with self.subTest(role=role):
+                executive = User.objects.create_user(
+                    username=f'quota_{role}', password='pass', role=role
+                )
+                self.client.force_login(executive)
+
+                response = self.client.get(reverse('quota_management'))
+
+                self.assertEqual(response.status_code, 200)
+                team_names = [data['team'].name for data in response.context['team_data']]
+                self.assertEqual(team_names, ['Quota Team A', 'Quota Team B'])
+                self.assertFalse(response.context['include_personal_quota'])
+                self.assertContains(response, 'Quota Management')
+                self.assertContains(response, reverse('quota_management'))
+
+    def test_gm_and_vp_can_update_salesperson_quotas(self):
+        for role in ('gm', 'vp'):
+            with self.subTest(role=role):
+                executive = User.objects.create_user(
+                    username=f'quota_editor_{role}', password='pass', role=role
+                )
+                self.client.force_login(executive)
+                response = self.client.post(
+                    reverse('update_member_quota', args=[self.membership.pk]),
+                    {'quota': '150000.00'},
+                )
+
+                self.assertEqual(response.status_code, 302)
+                self.membership.refresh_from_db()
+                self.assertEqual(self.membership.quota, Decimal('150000.00'))
+
+    def test_avp_quota_management_remains_limited_to_own_team(self):
+        self.client.force_login(self.avp_a)
+
+        response = self.client.get(reverse('quota_management'))
+
+        self.assertEqual(response.status_code, 200)
+        team_names = [data['team'].name for data in response.context['team_data']]
+        self.assertEqual(team_names, ['Quota Team A'])
+        self.assertTrue(response.context['include_personal_quota'])
+        self.assertContains(response, 'My Personal Quota (AVP)')
+
+    def test_other_roles_cannot_access_quota_management(self):
+        salesperson = self.salesperson
+        self.client.force_login(salesperson)
+
+        response = self.client.get(reverse('quota_management'))
+
+        self.assertEqual(response.status_code, 403)

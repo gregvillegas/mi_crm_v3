@@ -2,8 +2,11 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import JsonResponse, HttpResponseForbidden, HttpResponse
+from django.urls import reverse
 from django.utils import timezone
-from django.db.models import Q, Count, Avg, Sum, F
+from django.utils.dateparse import parse_datetime
+from django.db.models import Q, Count, Avg, Sum, F, Value
+from django.db.models.functions import Concat
 from django.core.paginator import Paginator
 from datetime import datetime, timedelta
 from django.db import models
@@ -26,7 +29,7 @@ from .forms import (
     EmailActivityForm, ProposalActivityForm, TaskActivityForm,
     ProofOfConceptForm
 )
-from teams.models import Group, TeamMembership, SupervisorCommitment, asm_scoped_groups, tech_manager_team_ids, technical_sales_users_for_teams
+from teams.models import Group, Team, TeamMembership, SupervisorCommitment, asm_scoped_groups, tech_manager_team_ids, technical_sales_users_for_teams
 from users.models import User
 from customers.models import Customer
 
@@ -946,9 +949,144 @@ def admin_dashboard(request):
         'stats': stats,
         'team_performance': team_performance,
         'activity_breakdown': activity_breakdown,
+        'can_view_all_activities': user.role in ACTIVITY_CALENDAR_GLOBAL_ROLES,
     }
     
     return render(request, 'sales_monitoring/admin_dashboard.html', context)
+
+
+@login_required
+def all_activities(request):
+    """List all company activities in activity-type order for executive users."""
+    if request.user.role not in ACTIVITY_CALENDAR_GLOBAL_ROLES:
+        return HttpResponseForbidden("You don't have permission to view all activities.")
+
+    selected_activity_type = None
+    selected_team = None
+    selected_group = None
+    selected_salesperson = None
+
+    activity_type_id = request.GET.get('activity_type', '')
+    if activity_type_id.isdigit():
+        selected_activity_type = ActivityType.objects.filter(pk=activity_type_id).first()
+
+    team_id = request.GET.get('team', '')
+    if team_id.isdigit():
+        selected_team = Team.objects.filter(pk=team_id).first()
+
+    group_id = request.GET.get('group', '')
+    if group_id.isdigit():
+        selected_group = Group.objects.filter(pk=group_id).first()
+        if selected_group and selected_team and selected_group.team_id != selected_team.pk:
+            selected_group = None
+
+    salesperson_id = request.GET.get('salesperson_id', '')
+    if salesperson_id.isdigit():
+        selected_salesperson = User.objects.filter(
+            pk=salesperson_id,
+            role='salesperson',
+            sales_activities__isnull=False,
+        ).distinct().first()
+
+    activities = (
+        SalesActivity.objects
+        .select_related(
+            'activity_type',
+            'salesperson',
+            'salesperson__team_membership__group__team',
+            'customer',
+        )
+        .order_by('activity_type__name', '-scheduled_start', '-created_at')
+    )
+    if selected_activity_type:
+        activities = activities.filter(activity_type=selected_activity_type)
+    if selected_team:
+        activities = activities.filter(
+            salesperson__team_membership__group__team=selected_team
+        )
+    if selected_group:
+        activities = activities.filter(
+            salesperson__team_membership__group=selected_group
+        )
+    if selected_salesperson:
+        activities = activities.filter(salesperson=selected_salesperson)
+
+    paginator = Paginator(activities, 50)
+    page_obj = paginator.get_page(request.GET.get('page'))
+    pagination_params = request.GET.copy()
+    pagination_params.pop('page', None)
+
+    selected_salesperson_label = ''
+    if selected_salesperson:
+        name = selected_salesperson.get_full_name() or selected_salesperson.username
+        selected_salesperson_label = (
+            f'{name} ({selected_salesperson.username})'
+            if selected_salesperson.get_full_name()
+            else name
+        )
+
+    return render(request, 'sales_monitoring/all_activities.html', {
+        'page_obj': page_obj,
+        'activities': page_obj.object_list,
+        'total_activities': paginator.count,
+        'activity_types': ActivityType.objects.order_by('name'),
+        'teams': Team.objects.order_by('name'),
+        'groups': Group.objects.select_related('team').order_by('team__name', 'name'),
+        'selected_activity_type': selected_activity_type.pk if selected_activity_type else None,
+        'selected_team': selected_team.pk if selected_team else None,
+        'selected_group': selected_group.pk if selected_group else None,
+        'selected_salesperson_id': str(selected_salesperson.pk) if selected_salesperson else '',
+        'selected_salesperson_label': selected_salesperson_label,
+        'pagination_query': pagination_params.urlencode(),
+    })
+
+
+@login_required
+def all_activities_salesperson_suggestions(request):
+    """Autocomplete active salesperson matches for the executive activity filters."""
+    if request.user.role not in ACTIVITY_CALENDAR_GLOBAL_ROLES:
+        return HttpResponseForbidden("You don't have permission to search salespeople.")
+
+    query = (request.GET.get('q') or '').strip()[:80]
+    if not query:
+        return JsonResponse({'results': []})
+
+    salespeople = (
+        User.objects.filter(role='salesperson', sales_activities__isnull=False)
+        .annotate(full_name=Concat('first_name', Value(' '), 'last_name'))
+        .filter(
+            Q(username__icontains=query)
+            | Q(first_name__icontains=query)
+            | Q(last_name__icontains=query)
+            | Q(full_name__icontains=query)
+        )
+    )
+    team_id = request.GET.get('team', '')
+    if team_id.isdigit():
+        salespeople = salespeople.filter(team_membership__group__team_id=team_id)
+    group_id = request.GET.get('group', '')
+    if group_id.isdigit():
+        salespeople = salespeople.filter(team_membership__group_id=group_id)
+
+    results = []
+    for salesperson in salespeople.distinct().select_related(
+        'team_membership__group__team'
+    ).order_by('first_name', 'last_name', 'username')[:20]:
+        full_name = salesperson.get_full_name()
+        label = (
+            f'{full_name} ({salesperson.username})'
+            if full_name
+            else salesperson.username
+        )
+        membership = getattr(salesperson, 'team_membership', None)
+        results.append({
+            'id': salesperson.pk,
+            'label': label,
+            'team': membership.group.team.name if membership else 'Unassigned',
+            'group': membership.group.name if membership else 'Unassigned',
+        })
+    return JsonResponse({'results': results})
+
 
 @login_required
 def create_activity(request):
@@ -1759,96 +1897,132 @@ def bulk_update_activities(request):
     
     return render(request, 'sales_monitoring/bulk_update_form.html', context)
 
+ACTIVITY_CALENDAR_GLOBAL_ROLES = {'admin', 'gm', 'vp', 'president'}
+ACTIVITY_CALENDAR_SCOPED_ROLES = {
+    'salesperson', 'avp', 'supervisor', 'asm', 'sm', 'teamlead',
+}
+
+
+def _calendar_user_can_view(user):
+    return user.role in (ACTIVITY_CALENDAR_GLOBAL_ROLES | ACTIVITY_CALENDAR_SCOPED_ROLES)
+
+
+def _calendar_activities_for_user(user):
+    """Apply calendar visibility rules before returning a SalesActivity queryset."""
+    activities = SalesActivity.objects.all()
+    if user.role in ACTIVITY_CALENDAR_GLOBAL_ROLES:
+        return activities
+    if user.role == 'salesperson':
+        return activities.filter(salesperson=user)
+    if user.role == 'avp':
+        return activities.filter(
+            salesperson__team_membership__group__team__avp=user
+        ).distinct()
+
+    if user.role == 'teamlead':
+        groups = user.led_groups.all()
+    elif user.role == 'asm':
+        groups = asm_scoped_groups(user)
+    elif user.role == 'sm':
+        groups = user.sm_groups.all()
+    elif user.role == 'supervisor':
+        groups = user.managed_groups.all()
+    else:
+        return activities.none()
+
+    return activities.filter(
+        salesperson__team_membership__group__in=groups
+    ).distinct()
+
+
 @login_required
 def activity_calendar(request):
-    """Calendar view of activities with week/month switching"""
-    user = request.user
-    
-    # Determine which activities to show based on user role
-    if user.role == 'salesperson':
-        activities = SalesActivity.objects.filter(salesperson=user)
-    elif user.role in ['supervisor', 'asm', 'sm', 'teamlead']:
-        # Get groups based on user role
-        if user.role == 'teamlead':
-            supervised_groups = user.led_groups.all()
-        elif user.role == 'asm':
-            supervised_groups = asm_scoped_groups(user)
-        elif user.role == 'sm':
-            supervised_groups = user.sm_groups.all()
-        else:
-            supervised_groups = user.managed_groups.all()
-        
-        salesperson_ids = []
-        for group in supervised_groups:
-            salesperson_ids.extend(
-                group.members.filter(user__role='salesperson').values_list('user_id', flat=True)
-            )
-        activities = SalesActivity.objects.filter(salesperson_id__in=salesperson_ids)
-    else:
-        activities = SalesActivity.objects.all()
-    
-    # Determine window from query params
-    today = timezone.now().date()
-    q_view = (request.GET.get('view') or 'month').lower()
-    q_date = request.GET.get('date')
+    """Render the month, week, or day calendar for the user's permitted teams."""
+    if not _calendar_user_can_view(request.user):
+        return HttpResponseForbidden("You don't have permission to view this activity calendar.")
+
+    today = timezone.localdate()
+    requested_view = (request.GET.get('view') or 'month').lower()
+    initial_view = {
+        'week': 'timeGridWeek',
+        'day': 'timeGridDay',
+    }.get(requested_view, 'dayGridMonth')
+
     base_date = today
-    try:
-        if q_date:
-            # Support YYYY-MM-DD or YYYY-MM
-            base_date = datetime.strptime(q_date, '%Y-%m-%d').date()
-        else:
-            base_date = today
-    except Exception:
-        base_date = today
+    requested_date = request.GET.get('date')
+    if requested_date:
+        for date_format in ('%Y-%m-%d', '%Y-%m'):
+            try:
+                base_date = datetime.strptime(requested_date, date_format).date()
+                break
+            except ValueError:
+                continue
 
-    if q_view == 'week':
-        week_start = base_date - timedelta(days=base_date.weekday())
-        week_end = week_start + timedelta(days=7)
-        initial_view = 'timeGridWeek'
-        initial_date = week_start.isoformat()
-        activities = activities.filter(
-            scheduled_start__date__gte=week_start,
-            scheduled_start__date__lt=week_end
-        )
-    else:
-        month_start = base_date.replace(day=1)
-        next_month = (month_start + timedelta(days=32)).replace(day=1)
-        initial_view = 'dayGridMonth'
-        initial_date = month_start.isoformat()
-        activities = activities.filter(
-            scheduled_start__date__gte=month_start,
-            scheduled_start__date__lt=next_month
-        )
+    context = {
+        'initial_view': initial_view,
+        'initial_date': base_date.isoformat(),
+        'calendar_scope_label': (
+            'All teams' if request.user.role in ACTIVITY_CALENDAR_GLOBAL_ROLES
+            else 'Activities visible to you'
+        ),
+        'calendar_is_global': request.user.role in ACTIVITY_CALENDAR_GLOBAL_ROLES,
+    }
+    return render(request, 'sales_monitoring/activity_calendar.html', context)
 
-    activities = activities.select_related('salesperson', 'customer', 'activity_type')
-    
-    # Prepare calendar data
-    calendar_events = []
+
+@login_required
+def activity_calendar_events(request):
+    """Return only the activities visible to this user within FullCalendar's range."""
+    if not _calendar_user_can_view(request.user):
+        return HttpResponseForbidden("You don't have permission to view these activities.")
+
+    start = parse_datetime(request.GET.get('start', ''))
+    end = parse_datetime(request.GET.get('end', ''))
+    if not start or not end:
+        return JsonResponse({'error': 'A valid start and end date are required.'}, status=400)
+    if timezone.is_naive(start):
+        start = timezone.make_aware(start)
+    if timezone.is_naive(end):
+        end = timezone.make_aware(end)
+    if start >= end:
+        return JsonResponse({'error': 'A valid start and end date are required.'}, status=400)
+
+    activities = (
+        _calendar_activities_for_user(request.user)
+        .filter(scheduled_start__gte=start, scheduled_start__lt=end)
+        .select_related(
+            'salesperson',
+            'salesperson__team_membership__group__team',
+            'customer',
+            'activity_type',
+        )
+        .order_by('scheduled_start')
+    )
+
+    events = []
     for activity in activities:
+        membership = getattr(activity.salesperson, 'team_membership', None)
+        group = membership.group if membership else None
         event = {
             'id': activity.id,
             'title': activity.title,
-            'start': activity.scheduled_start.isoformat() if activity.scheduled_start else None,
+            'start': activity.scheduled_start.isoformat(),
             'end': activity.scheduled_end.isoformat() if activity.scheduled_end else None,
             'color': get_activity_color(activity),
-            'url': f'/sales-monitoring/activity/{activity.id}/',
+            'url': reverse('sales_monitoring:activity_detail', args=[activity.id]),
             'extendedProps': {
-                'salesperson': activity.salesperson.username,
+                'salesperson': activity.salesperson.get_full_name() or activity.salesperson.username,
                 'customer': activity.customer.company_name if activity.customer else 'No Customer',
-                'status': activity.status,
-                'priority': activity.priority,
+                'team': group.team.name if group else 'Unassigned',
+                'group': group.name if group else 'Unassigned',
+                'status': activity.get_status_display(),
+                'priority': activity.get_priority_display(),
                 'type': activity.activity_type.name,
             }
         }
-        calendar_events.append(event)
-    
-    context = {
-        'calendar_events': calendar_events,
-        'initial_view': initial_view,
-        'initial_date': initial_date,
-    }
-    
-    return render(request, 'sales_monitoring/activity_calendar.html', context)
+        events.append(event)
+
+    return JsonResponse(events, safe=False)
 
 def get_activity_color(activity):
     """Get color for calendar events based on activity status and priority"""

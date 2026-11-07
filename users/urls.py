@@ -12,6 +12,7 @@ urlpatterns = [
     path('toggle-active/<int:user_id>/', views.toggle_user_active, name='toggle_user_active'),
     path('send-password-reset/<int:user_id>/', views.send_password_reset, name='send_password_reset'),
     path('reset-mfa/<int:user_id>/', views.reset_user_mfa, name='reset_user_mfa'),
+    path('unlock/<int:user_id>/', views.unlock_user, name='unlock_user'),
     path('export/', views.export_users_json, name='export_users_json'),
 ]
 

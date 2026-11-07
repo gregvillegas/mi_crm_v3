@@ -8,7 +8,7 @@ from django.utils.module_loading import import_string
 from django.contrib.auth import authenticate, get_user_model
 from unittest.mock import patch, MagicMock
 
-from users.models import FailedLoginAttempt
+from users.models import FailedLoginAttempt, PasswordResetAudit
 from users.signals import is_account_locked
 
 User = get_user_model()
@@ -233,3 +233,97 @@ class LogoutMethodTestCase(TestCase):
         response = self.client.post(reverse('logout'))
         self.assertEqual(response.status_code, 302)
         self.assertNotIn('_auth_user_id', self.client.session)
+
+
+class AccountUnlockTestCase(TestCase):
+    """Admin 'Unlock Account' action on the user-management page."""
+
+    PASSWORD = 'CorrectHorse!42'
+
+    def setUp(self):
+        self.victim = User.objects.create_user(
+            username='lockeduser',
+            email='locked@example.com',
+            password=self.PASSWORD,
+            role='salesperson',
+        )
+        self.admin = User.objects.create_user(
+            username='adminunlocker',
+            email='admin@example.com',
+            password='adminpass123',
+            role='admin',
+        )
+        self.client = Client()
+
+    def _lock_victim(self, identifier='lockeduser'):
+        limit = getattr(settings, 'MAX_FAILED_LOGIN_ATTEMPTS', 5)
+        for _ in range(limit + 1):
+            authenticate(request=None, username=identifier, password='wrong-password')
+        locked, _ = is_account_locked(identifier)
+        self.assertTrue(locked, 'precondition failed: account should be locked')
+
+    def test_unlock_clears_attempts_and_restores_login(self):
+        self._lock_victim()
+        self.client.force_login(self.admin)
+
+        response = self.client.post(reverse('unlock_user', args=[self.victim.id]))
+        self.assertEqual(response.status_code, 302)
+
+        locked, _ = is_account_locked('lockeduser')
+        self.assertFalse(locked, 'account should be unlocked after admin action')
+        self.assertEqual(
+            authenticate(request=None, username='lockeduser', password=self.PASSWORD),
+            self.victim,
+        )
+
+    def test_unlock_also_clears_attempts_recorded_against_the_email(self):
+        self._lock_victim(identifier='locked@example.com')
+        self.client.force_login(self.admin)
+
+        self.client.post(reverse('unlock_user', args=[self.victim.id]))
+
+        locked, _ = is_account_locked('locked@example.com')
+        self.assertFalse(locked, 'email-keyed attempts should also be cleared')
+
+    def test_unlock_is_audited(self):
+        self._lock_victim()
+        self.client.force_login(self.admin)
+
+        self.client.post(reverse('unlock_user', args=[self.victim.id]))
+
+        audit = PasswordResetAudit.objects.get(action='admin_unlock')
+        self.assertEqual(audit.target_user, self.victim)
+        self.assertEqual(audit.performed_by, self.admin)
+
+    def test_non_admin_cannot_unlock(self):
+        self._lock_victim()
+        vp = User.objects.create_user(
+            username='vpuser', email='vp@example.com',
+            password='vppass123', role='vp',
+        )
+        self.client.force_login(vp)
+
+        response = self.client.post(reverse('unlock_user', args=[self.victim.id]))
+
+        # user_passes_test redirects non-admins to the login page.
+        self.assertEqual(response.status_code, 302)
+        locked, _ = is_account_locked('lockeduser')
+        self.assertTrue(locked, 'non-admin must not be able to unlock accounts')
+
+    def test_get_request_does_not_unlock(self):
+        self._lock_victim()
+        self.client.force_login(self.admin)
+
+        self.client.get(reverse('unlock_user', args=[self.victim.id]))
+
+        locked, _ = is_account_locked('lockeduser')
+        self.assertTrue(locked, 'only POST should unlock')
+
+    def test_locked_account_is_flagged_on_management_page(self):
+        self._lock_victim()
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse('user_management'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Unlock Account')
+        self.assertContains(response, 'Locked')

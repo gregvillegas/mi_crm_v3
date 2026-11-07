@@ -111,8 +111,12 @@ class Delivery(models.Model):
         unique=True,
         verbose_name='S.O. / SRF# / POR#',
     )
-    client = models.CharField(max_length=255)
-    item = models.CharField(max_length=255, verbose_name='Item / Particular')
+    client = models.CharField(max_length=255, db_index=True)
+    item = models.CharField(
+        max_length=255,
+        db_index=True,
+        verbose_name='Item / Particular',
+    )
     area = models.CharField(max_length=255, blank=True)
     driver_staff = models.CharField(
         max_length=255,
@@ -136,6 +140,7 @@ class Delivery(models.Model):
     )
     ae = models.CharField(
         max_length=20,
+        db_index=True,
         verbose_name='AE',
         help_text='Account Executive initials (e.g. CSV, MGA).',
     )
@@ -155,8 +160,8 @@ class Delivery(models.Model):
     )
     is_backlog = models.BooleanField(default=False, db_index=True)
     backlog_count = models.PositiveIntegerField(default=0)
-    scheduled_date = models.DateField(null=True, blank=True)
-    accomplished_date = models.DateField(null=True, blank=True)
+    scheduled_date = models.DateField(null=True, blank=True, db_index=True)
+    accomplished_date = models.DateField(null=True, blank=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     objects = DeliveryQuerySet.as_manager()

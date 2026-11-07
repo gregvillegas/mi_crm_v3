@@ -11,6 +11,12 @@ urlpatterns = [
     path('salesperson/activities/', views.salesperson_activity_list, name='salesperson_activities'),
     path('admin/', views.admin_dashboard, name='admin_dashboard'),
     path('executive/', views.executive_dashboard, name='executive_dashboard'),
+    path('activities/all/', views.all_activities, name='all_activities'),
+    path(
+        'activities/salespeople/',
+        views.all_activities_salesperson_suggestions,
+        name='all_activities_salesperson_suggestions',
+    ),
     path('avp/group/<int:group_id>/activities/', views.avp_group_activities, name='avp_group_activities'),
     path('group/<int:group_id>/fiscal-summary/', views.group_fiscal_summary, name='group_fiscal_summary'),
     path('group/<int:group_id>/fiscal-summary/export/excel/', views.export_group_fiscal_summary_excel, name='export_group_fiscal_summary_excel'),
@@ -26,12 +32,13 @@ urlpatterns = [
     path('activity/<int:pk>/', views.activity_detail, name='activity_detail'),
     path('activity/<int:pk>/update/', views.update_activity, name='update_activity'),
     path('quick-log/', views.quick_log_activity, name='quick_log_activity'),
+    path('calendar/events/', views.activity_calendar_events, name='activity_calendar_events'),
+    path('calendar/', views.activity_calendar, name='activity_calendar'),
     
     # Monitoring and reporting
     path('team-performance/', views.team_performance, name='team_performance'),
     path('group-performance/', views.group_performance, name='group_performance'),
     path('reports/', views.activity_reports, name='activity_reports'),
-    path('calendar/', views.activity_calendar, name='activity_calendar'),
     path('bulk-update/', views.bulk_update_activities, name='bulk_update_activities'),
     
     # Data export

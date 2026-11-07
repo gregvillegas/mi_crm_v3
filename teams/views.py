@@ -449,14 +449,17 @@ def update_company_target(request):
 
 @login_required
 def quota_management(request):
-    if request.user.role != 'avp':
-         from django.http import HttpResponseForbidden
-         return HttpResponseForbidden("You don't have permission to access this page.")
+    role = request.user.role
+    allowed_roles = {'avp', 'admin', 'president', 'gm', 'vp'}
+    if role not in allowed_roles:
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden("You don't have permission to access this page.")
     
     from .models import RoleMonthlyQuota
     
-    # Get AVP's Teams
-    teams = Team.objects.filter(avp=request.user)
+    is_avp = role == 'avp'
+    teams = Team.objects.filter(avp=request.user) if is_avp else Team.objects.all()
+    teams = teams.order_by('name')
     
     today = timezone.now().date()
     month_start = today.replace(day=1)
@@ -488,11 +491,14 @@ def quota_management(request):
             'groups': group_data
         })
     
-    # Also get AVP's own quota
-    avp_quota = RoleMonthlyQuota.objects.filter(user=request.user, month=month_start).first()
+    avp_quota = None
+    if is_avp:
+        avp_quota = RoleMonthlyQuota.objects.filter(user=request.user, month=month_start).first()
 
     return render(request, 'teams/quota_management.html', {
         'team_data': team_data, 
         'month': month_start,
-        'avp_quota': avp_quota
+        'avp_quota': avp_quota,
+        'include_personal_quota': is_avp,
+        'quota_scope_label': 'My assigned teams' if is_avp else 'All company teams',
     })

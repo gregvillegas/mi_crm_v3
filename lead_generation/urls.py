@@ -25,6 +25,16 @@ urlpatterns = [
     # Lead sources
     path('sources/', views.lead_sources, name='lead_sources'),
     path('sources/create/', views.lead_source_create, name='lead_source_create'),
+    path(
+        'sources/<int:source_id>/edit/',
+        views.lead_source_edit,
+        name='lead_source_edit',
+    ),
+    path(
+        'sources/<int:source_id>/cost/',
+        views.lead_source_update_cost,
+        name='lead_source_update_cost',
+    ),
     
     # Analytics
     path('analytics/', views.analytics_dashboard, name='analytics'),

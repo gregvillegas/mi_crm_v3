@@ -1,0 +1,322 @@
+{% extends 'base.html' %}
+
+{% block title %}All Activities - Sales Monitoring{% endblock %}
+
+{% block extra_css %}
+<style>
+    .salesperson-filter {
+        position: relative;
+    }
+    .salesperson-suggestions {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        z-index: 1050;
+        max-height: 16rem;
+        overflow-y: auto;
+    }
+    .salesperson-suggestions[hidden] {
+        display: none !important;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+        <div>
+            <h1 class="mb-1"><i class="fas fa-list-alt text-primary me-2"></i>All Sales Activities</h1>
+            <p class="text-muted mb-0">
+                {{ total_activities }} activities, sorted by activity type
+            </p>
+        </div>
+        <a href="{% url 'sales_monitoring:dashboard' %}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i>Back to Dashboard
+        </a>
+    </div>
+
+    <form method="get" class="card mb-3" id="all-activity-filter">
+        <div class="card-body">
+            <div class="row g-3 align-items-end">
+                <div class="col-12 col-md-6 col-xl-3">
+                    <label for="activity-type-filter" class="form-label">Activity Type</label>
+                    <select name="activity_type" id="activity-type-filter" class="form-select">
+                        <option value="">All activity types</option>
+                        {% for activity_type in activity_types %}
+                        <option value="{{ activity_type.pk }}" {% if selected_activity_type == activity_type.pk %}selected{% endif %}>
+                            {{ activity_type.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-12 col-md-6 col-xl-3">
+                    <label for="team-filter" class="form-label">Team</label>
+                    <select name="team" id="team-filter" class="form-select">
+                        <option value="">All teams</option>
+                        {% for team in teams %}
+                        <option value="{{ team.pk }}" {% if selected_team == team.pk %}selected{% endif %}>
+                            {{ team.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-12 col-md-6 col-xl-3">
+                    <label for="group-filter" class="form-label">Group</label>
+                    <select name="group" id="group-filter" class="form-select">
+                        <option value="">All groups</option>
+                        {% for group in groups %}
+                        <option value="{{ group.pk }}"
+                                data-team-id="{{ group.team_id }}"
+                                {% if selected_group == group.pk %}selected{% endif %}>
+                            {{ group.name }} ({{ group.team.name }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-12 col-md-6 col-xl-3">
+                    <label for="salesperson-search" class="form-label">AE</label>
+                    <div class="salesperson-filter">
+                        <input type="text"
+                               id="salesperson-search"
+                               class="form-control"
+                               value="{{ selected_salesperson_label }}"
+                               placeholder="Type a name or username"
+                               autocomplete="off"
+                               role="combobox"
+                               aria-autocomplete="list"
+                               aria-expanded="false"
+                               aria-controls="salesperson-suggestions">
+                        <input type="hidden"
+                               name="salesperson_id"
+                               id="salesperson-id"
+                               value="{{ selected_salesperson_id }}">
+                        <div id="salesperson-suggestions"
+                             class="list-group salesperson-suggestions w-100 shadow"
+                             role="listbox"
+                             hidden></div>
+                    </div>
+                </div>
+            </div>
+            <div class="d-flex flex-wrap gap-2 mt-3">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-filter me-1"></i>Apply Filters
+                </button>
+                <a href="{% url 'sales_monitoring:all_activities' %}" class="btn btn-outline-secondary">
+                    Clear Filters
+                </a>
+            </div>
+        </div>
+    </form>
+
+    <div class="card">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Activity Type</th>
+                        <th>Activity</th>
+                        <th>Salesperson</th>
+                        <th>Team / Group</th>
+                        <th>Customer</th>
+                        <th>Scheduled</th>
+                        <th>Status</th>
+                        <th>Priority</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for activity in activities %}
+                    <tr>
+                        <td class="text-nowrap">
+                            <i class="{{ activity.activity_type.icon }} me-1 text-{{ activity.activity_type.color }}"></i>
+                            {{ activity.activity_type.name }}
+                        </td>
+                        <td>
+                            <a href="{% url 'sales_monitoring:activity_detail' activity.pk %}">
+                                {{ activity.title }}
+                            </a>
+                        </td>
+                        <td>{{ activity.salesperson.get_full_name|default:activity.salesperson.username }}</td>
+                        <td>
+                            {% with membership=activity.salesperson.team_membership %}
+                                {% if membership %}
+                                    {{ membership.group.team.name }} / {{ membership.group.name }}
+                                {% else %}
+                                    <span class="text-muted">Unassigned</span>
+                                {% endif %}
+                            {% endwith %}
+                        </td>
+                        <td>{{ activity.customer.company_name|default:"-" }}</td>
+                        <td class="text-nowrap">
+                            {% if activity.scheduled_start %}
+                                {{ activity.scheduled_start|date:"M j, Y g:i A" }}
+                            {% else %}
+                                <span class="text-muted">Not scheduled</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ activity.get_status_display }}</td>
+                        <td>{{ activity.get_priority_display }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="8" class="text-center text-muted py-5">No activities found.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if page_obj.paginator.num_pages > 1 %}
+        <div class="card-footer d-flex justify-content-between align-items-center gap-2">
+            <span class="text-muted small">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+            <nav aria-label="Activity list pages">
+                <ul class="pagination pagination-sm mb-0">
+                    <li class="page-item {% if not page_obj.has_previous %}disabled{% endif %}">
+                        {% if page_obj.has_previous %}
+                            <a class="page-link" href="?{% if pagination_query %}{{ pagination_query }}&amp;{% endif %}page={{ page_obj.previous_page_number }}">Previous</a>
+                        {% else %}
+                            <span class="page-link">Previous</span>
+                        {% endif %}
+                    </li>
+                    <li class="page-item {% if not page_obj.has_next %}disabled{% endif %}">
+                        {% if page_obj.has_next %}
+                            <a class="page-link" href="?{% if pagination_query %}{{ pagination_query }}&amp;{% endif %}page={{ page_obj.next_page_number }}">Next</a>
+                        {% else %}
+                            <span class="page-link">Next</span>
+                        {% endif %}
+                    </li>
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const teamFilter = document.getElementById('team-filter');
+    const groupFilter = document.getElementById('group-filter');
+    const salespersonSearch = document.getElementById('salesperson-search');
+    const salespersonId = document.getElementById('salesperson-id');
+    const suggestions = document.getElementById('salesperson-suggestions');
+    const suggestionUrl = '{% url "sales_monitoring:all_activities_salesperson_suggestions" %}';
+    let searchTimer = null;
+    let activeRequest = null;
+
+    function closeSuggestions() {
+        suggestions.hidden = true;
+        suggestions.replaceChildren();
+        salespersonSearch.setAttribute('aria-expanded', 'false');
+    }
+
+    function clearSalespersonSelection() {
+        salespersonId.value = '';
+        salespersonSearch.value = '';
+        closeSuggestions();
+    }
+
+    function syncGroups(clearInvalidSelection) {
+        const selectedTeam = teamFilter.value;
+        Array.from(groupFilter.options).forEach(function (option) {
+            if (!option.value) return;
+            option.hidden = Boolean(selectedTeam && option.dataset.teamId !== selectedTeam);
+        });
+        const selectedOption = groupFilter.options[groupFilter.selectedIndex];
+        if (clearInvalidSelection && selectedOption && selectedOption.hidden) {
+            groupFilter.value = '';
+        }
+    }
+
+    teamFilter.addEventListener('change', function () {
+        syncGroups(true);
+        clearSalespersonSelection();
+    });
+    groupFilter.addEventListener('change', clearSalespersonSelection);
+    syncGroups(false);
+
+    function chooseSalesperson(person) {
+        salespersonId.value = person.id;
+        salespersonSearch.value = person.label;
+        closeSuggestions();
+        salespersonSearch.focus();
+    }
+
+    function renderSuggestions(results) {
+        suggestions.replaceChildren();
+        if (!results.length) {
+            const empty = document.createElement('div');
+            empty.className = 'list-group-item text-muted';
+            empty.textContent = 'No matching salespeople found.';
+            suggestions.appendChild(empty);
+        } else {
+            results.forEach(function (person) {
+                const option = document.createElement('button');
+                option.type = 'button';
+                option.className = 'list-group-item list-group-item-action';
+                option.setAttribute('role', 'option');
+                option.textContent = person.label + ' · ' + person.team + ' / ' + person.group;
+                option.addEventListener('click', function () {
+                    chooseSalesperson(person);
+                });
+                suggestions.appendChild(option);
+            });
+        }
+        suggestions.hidden = false;
+        salespersonSearch.setAttribute('aria-expanded', 'true');
+    }
+
+    salespersonSearch.addEventListener('input', function () {
+        salespersonId.value = '';
+        window.clearTimeout(searchTimer);
+        if (activeRequest) activeRequest.abort();
+
+        const query = salespersonSearch.value.trim();
+        if (!query) {
+            closeSuggestions();
+            return;
+        }
+
+        searchTimer = window.setTimeout(async function () {
+            activeRequest = new AbortController();
+            const params = new URLSearchParams({
+                q: query,
+                team: teamFilter.value,
+                group: groupFilter.value
+            });
+            try {
+                const response = await fetch(suggestionUrl + '?' + params.toString(), {
+                    headers: {'X-Requested-With': 'XMLHttpRequest'},
+                    signal: activeRequest.signal
+                });
+                if (!response.ok) throw new Error('Could not search salespeople.');
+                const data = await response.json();
+                renderSuggestions(data.results);
+            } catch (error) {
+                if (error.name !== 'AbortError') closeSuggestions();
+            }
+        }, 180);
+    });
+
+    salespersonSearch.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') {
+            closeSuggestions();
+        } else if (event.key === 'ArrowDown') {
+            const firstOption = suggestions.querySelector('[role="option"]');
+            if (firstOption) {
+                event.preventDefault();
+                firstOption.focus();
+            }
+        } else if (event.key === 'Enter' && !salespersonId.value) {
+            const firstOption = suggestions.querySelector('[role="option"]');
+            if (firstOption) {
+                event.preventDefault();
+                firstOption.click();
+            }
+        }
+    });
+
+    document.addEventListener('click', function (event) {
+        if (!event.target.closest('.salesperson-filter')) closeSuggestions();
+    });
+});
+</script>
+{% endblock %}

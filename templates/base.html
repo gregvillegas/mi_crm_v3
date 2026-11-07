@@ -854,7 +854,7 @@
                                 </ul>
                             </li>
                         {% endif %}
-                        {% if user.role == 'avp' %}
+                        {% if user.role == 'avp' or user.role == 'admin' or user.role == 'president' or user.role == 'gm' or user.role == 'vp' %}
                             <li class="nav-item">
                                 <a class="nav-link" href="{% url 'quota_management' %}" title="Quota Management">
                                     <i class="fas fa-chart-pie text-warning"></i><span>Quotas</span>

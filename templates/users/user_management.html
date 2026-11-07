@@ -129,6 +129,11 @@
                         <span class="badge bg-{% if u.is_active %}success{% else %}danger{% endif %}" id="status-badge-{{ u.id }}">
                             {% if u.is_active %}Active{% else %}Inactive{% endif %}
                         </span>
+                        {% if u.lockout_minutes_remaining %}
+                            <span class="badge bg-warning text-dark ms-1" title="Locked out due to failed logins; auto-unlocks in about {{ u.lockout_minutes_remaining }} min">
+                                <i class="fas fa-lock"></i> Locked
+                            </span>
+                        {% endif %}
                     </td>
                     <td>{{ u.last_login|date:"M d, Y H:i"|default:"Never" }}</td>
                     <td>
@@ -176,6 +181,19 @@
                                         <button type="submit" class="dropdown-item" style="border:none;background:none;"
                                                 title="Remove the user's MFA so they can re-enrol (lost authenticator)">
                                             <i class="fas fa-mobile-alt me-2 text-danger"></i>Reset MFA (Lost Authenticator)
+                                        </button>
+                                    </form>
+                                </li>
+                                {% endif %}
+
+                                {% if u.lockout_minutes_remaining %}
+                                <li>
+                                    <form method="post" action="{% url 'unlock_user' u.id %}"
+                                          onsubmit="return confirm('Unlock {{ u.get_full_name|default:u.username|escapejs }}? This clears their recent failed login attempts so they can log in again.');">
+                                        {% csrf_token %}
+                                        <button type="submit" class="dropdown-item" style="border:none;background:none;"
+                                                title="Clear failed logins and unlock this account">
+                                            <i class="fas fa-lock-open me-2 text-success"></i>Unlock Account
                                         </button>
                                     </form>
                                 </li>

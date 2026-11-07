@@ -5,6 +5,8 @@ Compliant with Data Privacy Act of 2012 (R.A. 10173) — logs all failed login a
 import logging
 from django.conf import settings
 from django.contrib.auth.signals import user_login_failed, user_logged_in
+from django.db.models import Q
+from django.db.models.functions import Lower
 from django.dispatch import receiver
 from django.utils import timezone
 from datetime import timedelta
@@ -59,6 +61,52 @@ def is_account_locked(username):
             if remaining > 0:
                 return True, int(remaining) + 1
     return False, 0
+
+
+def get_lockout_map(identifiers):
+    """
+    Bulk version of is_account_locked for a set of usernames/emails.
+
+    Returns {lowercased_identifier: minutes_remaining} for the identifiers that
+    are currently locked. Runs a single query so admin list pages can flag locked
+    accounts without a query per user.
+    """
+    from .models import FailedLoginAttempt
+
+    lowered = {i.lower() for i in identifiers if i}
+    if not lowered:
+        return {}
+
+    max_attempts = getattr(settings, 'MAX_FAILED_LOGIN_ATTEMPTS', 5)
+    window_minutes = getattr(settings, 'FAILED_LOGIN_WINDOW_MINUTES', 15)
+    lockout_minutes = getattr(settings, 'ACCOUNT_LOCKOUT_MINUTES', 30)
+
+    window_start = timezone.now() - timedelta(minutes=window_minutes)
+
+    rows = (
+        FailedLoginAttempt.objects
+        .filter(timestamp__gte=window_start)
+        .annotate(lowered_username=Lower('username'))
+        .filter(lowered_username__in=lowered)
+        .values_list('lowered_username', 'timestamp')
+    )
+
+    counts = {}
+    latest = {}
+    for name, timestamp in rows:
+        counts[name] = counts.get(name, 0) + 1
+        if name not in latest or timestamp > latest[name]:
+            latest[name] = timestamp
+
+    now = timezone.now()
+    locked = {}
+    for name, count in counts.items():
+        if count >= max_attempts:
+            expires = latest[name] + timedelta(minutes=lockout_minutes)
+            remaining = (expires - now).total_seconds() / 60
+            if remaining > 0:
+                locked[name] = int(remaining) + 1
+    return locked
 
 
 @receiver(user_login_failed)
@@ -144,6 +192,46 @@ def record_reset_audit(action, request=None, target_user=None, target_identifier
         )
     except Exception as exc:
         logger.error('Failed to record password reset audit (%s): %s', action, exc)
+
+
+def unlock_account(user, performed_by=None, request=None):
+    """
+    Release a login lockout by clearing the account's recent failed-login attempts.
+
+    The lockout is derived from FailedLoginAttempt rows (see is_account_locked), so
+    deleting the attempts inside the failure window immediately unlocks the account.
+    Both the username and the email are cleared because a user may attempt to log in
+    with either identifier. Audited via PasswordResetAudit. Returns the number of
+    failed attempts that were cleared.
+    """
+    from .models import FailedLoginAttempt
+
+    window_minutes = getattr(settings, 'FAILED_LOGIN_WINDOW_MINUTES', 15)
+    window_start = timezone.now() - timedelta(minutes=window_minutes)
+
+    identifiers = [user.username]
+    if user.email:
+        identifiers.append(user.email)
+
+    match = Q()
+    for identifier in identifiers:
+        match |= Q(username__iexact=identifier)
+
+    cleared = 0
+    if identifiers:
+        qs = FailedLoginAttempt.objects.filter(timestamp__gte=window_start).filter(match)
+        cleared = qs.count()
+        qs.delete()
+
+    record_reset_audit(
+        'admin_unlock',
+        request=request,
+        target_user=user,
+        target_identifier=user.email or user.username,
+        performed_by=performed_by,
+        notes=f'Cleared {cleared} failed login attempt(s); account unlocked.',
+    )
+    return cleared
 
 
 try:

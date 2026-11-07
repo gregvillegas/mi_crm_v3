@@ -1,7 +1,7 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from django.http import JsonResponse, HttpResponse
+from django.http import JsonResponse, HttpResponse, HttpResponseForbidden
 from django.core.paginator import Paginator
 from django.db.models import Q, Count, Sum, Avg
 from django.utils import timezone
@@ -14,13 +14,15 @@ from datetime import datetime, timedelta
 from .models import Lead, LeadSource, LeadActivity, ConversionTracking, LeadNurturingCampaign
 from .forms import (
     LeadForm, LeadActivityForm, ConversionForm, MarkLostForm, LeadFilterForm,
-    LeadSourceForm, BulkLeadActionForm, LeadImportForm
+    LeadSourceForm, LeadSourceCostUpdateForm, BulkLeadActionForm, LeadImportForm
 )
 from sales_funnel.models import SalesFunnel
 from customers.models import Customer
 from users.models import User
 
 EXEC_ROLES = {'admin', 'president', 'gm', 'vp'}
+LEAD_SOURCE_CREATOR_ROLES = EXEC_ROLES | {'marketing'}
+LEAD_SOURCE_MANAGER_ROLES = {'admin', 'marketing'}
 
 
 @login_required
@@ -533,7 +535,9 @@ def lead_sources(request):
     ).order_by('name')
     
     return render(request, 'lead_generation/source_list.html', {
-        'sources': sources
+        'sources': sources,
+        'can_create_sources': request.user.role in LEAD_SOURCE_CREATOR_ROLES,
+        'can_manage_sources': request.user.role in LEAD_SOURCE_MANAGER_ROLES,
     })
 
 
@@ -541,8 +545,7 @@ def lead_sources(request):
 def lead_source_create(request):
     """Create new lead source"""
     
-    # Only allow admins and executives to create sources
-    if request.user.role not in (EXEC_ROLES | {'marketing'}):
+    if request.user.role not in LEAD_SOURCE_CREATOR_ROLES:
         messages.error(request, 'You do not have permission to create lead sources.')
         return redirect('lead_generation:lead_sources')
     
@@ -558,6 +561,50 @@ def lead_source_create(request):
     return render(request, 'lead_generation/source_form.html', {
         'form': form,
         'title': 'Create Lead Source'
+    })
+
+
+@login_required
+def lead_source_edit(request, source_id):
+    """Edit a lead source; only Marketing and Admin can change existing sources."""
+    if request.user.role not in LEAD_SOURCE_MANAGER_ROLES:
+        return HttpResponseForbidden('You do not have permission to edit lead sources.')
+
+    source = get_object_or_404(LeadSource, id=source_id)
+    if request.method == 'POST':
+        form = LeadSourceForm(request.POST, instance=source)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f'Lead source "{source.name}" updated successfully.')
+            return redirect('lead_generation:lead_sources')
+    else:
+        form = LeadSourceForm(instance=source)
+
+    return render(request, 'lead_generation/source_form.html', {
+        'form': form,
+        'title': f'Edit Lead Source: {source.name}',
+    })
+
+
+@login_required
+@require_http_methods(["POST"])
+def lead_source_update_cost(request, source_id):
+    """Update one lead source's cost per lead for Marketing/Admin users."""
+    if request.user.role not in LEAD_SOURCE_MANAGER_ROLES:
+        return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
+
+    source = get_object_or_404(LeadSource, id=source_id)
+    form = LeadSourceCostUpdateForm(request.POST)
+    if not form.is_valid():
+        error = form.errors.get('cost_per_lead', ['Enter a valid non-negative amount.'])[0]
+        return JsonResponse({'success': False, 'error': error}, status=400)
+
+    source.cost_per_lead = form.cleaned_data['cost_per_lead']
+    source.save(update_fields=['cost_per_lead'])
+    return JsonResponse({
+        'success': True,
+        'cost_per_lead': f'{source.cost_per_lead:.2f}',
+        'display': f'₱{source.cost_per_lead:,.2f}',
     })
 
 

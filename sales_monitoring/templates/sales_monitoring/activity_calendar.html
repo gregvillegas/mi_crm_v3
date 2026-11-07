@@ -2,8 +2,7 @@
 
 {% block title %}Activity Calendar - Sales Monitoring{% endblock %}
 
-{% block extra_head %}
-<!-- FullCalendar CSS -->
+{% block extra_css %}
 <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.css" rel="stylesheet">
 {% endblock %}
 
@@ -12,7 +11,12 @@
     <div class="row">
         <div class="col-12">
             <div class="d-flex justify-content-between align-items-center mb-4">
-                <h1><i class="fas fa-calendar"></i> Activity Calendar</h1>
+                <div>
+                    <h1><i class="fas fa-calendar"></i> Activity Calendar</h1>
+                    <p class="text-muted mb-0">
+                        {% if calendar_is_global %}Activities across all teams{% else %}{{ calendar_scope_label }}{% endif %}
+                    </p>
+                </div>
                 <div class="btn-group">
                     <a href="{% url 'sales_monitoring:dashboard' %}" class="btn btn-secondary">
                         <i class="fas fa-arrow-left"></i> Back to Dashboard
@@ -65,14 +69,14 @@ document.addEventListener('DOMContentLoaded', function() {
     
     const calendar = new FullCalendar.Calendar(calendarEl, {
         initialView: '{{ initial_view|default:"dayGridMonth" }}',
-        initialDate: '{{ initial_date|default:"" }}',
+        initialDate: '{{ initial_date|escapejs }}',
         headerToolbar: {
             left: 'prev,next today',
             center: 'title',
             right: 'dayGridMonth,timeGridWeek,timeGridDay'
         },
         height: 'auto',
-        events: {{ calendar_events|safe }},
+        events: '{% url "sales_monitoring:activity_calendar_events" %}',
         eventClick: function(info) {
             info.jsEvent.preventDefault();
             if (info.event.url) {
@@ -80,24 +84,29 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         },
         eventMouseEnter: function(info) {
-            // Create tooltip
             const tooltip = document.createElement('div');
             tooltip.className = 'tooltip bs-tooltip-top show';
-            tooltip.innerHTML = `
-                <div class="tooltip-arrow"></div>
-                <div class="tooltip-inner">
-                    <strong>${info.event.title}</strong><br>
-                    Salesperson: ${info.event.extendedProps.salesperson}<br>
-                    Customer: ${info.event.extendedProps.customer}<br>
-                    Status: ${info.event.extendedProps.status}<br>
-                    Priority: ${info.event.extendedProps.priority}
-                </div>
-            `;
+            const arrow = document.createElement('div');
+            arrow.className = 'tooltip-arrow';
+            const inner = document.createElement('div');
+            inner.className = 'tooltip-inner';
+            inner.style.whiteSpace = 'pre-line';
+            inner.textContent = [
+                info.event.title,
+                'Team: ' + info.event.extendedProps.team,
+                'Group: ' + info.event.extendedProps.group,
+                'Salesperson: ' + info.event.extendedProps.salesperson,
+                'Customer: ' + info.event.extendedProps.customer,
+                'Status: ' + info.event.extendedProps.status,
+                'Priority: ' + info.event.extendedProps.priority
+            ].join('\n');
+            tooltip.appendChild(arrow);
+            tooltip.appendChild(inner);
             
             document.body.appendChild(tooltip);
             
             const rect = info.el.getBoundingClientRect();
-            tooltip.style.position = 'absolute';
+            tooltip.style.position = 'fixed';
             tooltip.style.left = rect.left + (rect.width / 2) - (tooltip.offsetWidth / 2) + 'px';
             tooltip.style.top = rect.top - tooltip.offsetHeight - 10 + 'px';
             tooltip.style.zIndex = '1070';

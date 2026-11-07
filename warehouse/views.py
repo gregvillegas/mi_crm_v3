@@ -3,7 +3,7 @@ from datetime import timedelta
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -11,7 +11,12 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.views.decorators.http import require_POST
 
-from .forms import BacklogReasonForm, DeliveryForm, ScheduledDeliveryImportForm
+from .forms import (
+    BacklogReasonForm,
+    DeliveryForm,
+    DeliveryHistoryFilterForm,
+    ScheduledDeliveryImportForm,
+)
 from .importers import (
     ScheduledDeliveryImportError,
     import_scheduled_delivery_file,
@@ -192,17 +197,45 @@ def delivery_history(request):
         return HttpResponseForbidden("You don't have access to the warehouse logs.")
 
     queryset = Delivery.objects.delivery_history()
-    paginator = Paginator(queryset, HISTORY_PAGE_SIZE)
+    filter_form = DeliveryHistoryFilterForm(request.GET or None)
+    if filter_form.is_valid():
+        company = filter_form.cleaned_data['company']
+        ae = filter_form.cleaned_data['ae']
+        history_date = filter_form.cleaned_data['date']
+        item = filter_form.cleaned_data['item']
 
+        if company:
+            queryset = queryset.filter(client__istartswith=company)
+        if ae:
+            queryset = queryset.filter(ae__istartswith=ae)
+        if history_date:
+            queryset = queryset.filter(
+                Q(
+                    status=Delivery.STATUS_ACCOMPLISHED,
+                    accomplished_date=history_date,
+                )
+                | (
+                    ~Q(status=Delivery.STATUS_ACCOMPLISHED)
+                    & Q(scheduled_date=history_date)
+                )
+            )
+        if item:
+            queryset = queryset.filter(item__istartswith=item)
+
+    paginator = Paginator(queryset, HISTORY_PAGE_SIZE)
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
+    filter_params = request.GET.copy()
+    filter_params.pop('page', None)
 
     return render(
         request,
         'warehouse/delivery_history.html',
         {
             'page_obj': page_obj,
-            'total_count': queryset.count(),
+            'total_count': paginator.count,
+            'filter_form': filter_form,
+            'filter_query': filter_params.urlencode(),
         },
     )
 

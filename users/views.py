@@ -7,6 +7,7 @@ from django.core.management import call_command
 from django.db.models import Q
 from .forms import SalespersonCreationForm, UserProfileForm
 from .models import User, UserActivityLog
+from .signals import get_lockout_map, unlock_account
 from teams.models import TeamMembership, Group
 import tempfile
 import os
@@ -132,6 +133,19 @@ def user_management(request):
         users = paginator.page(1)
     except EmptyPage:
         users = paginator.page(paginator.num_pages)
+    
+    # Flag accounts that are currently locked out (one bulk query, not per user).
+    identifiers = []
+    for account in users:
+        identifiers.append(account.username)
+        if account.email:
+            identifiers.append(account.email)
+    lockout_map = get_lockout_map(identifiers)
+    for account in users:
+        remaining = lockout_map.get(account.username.lower())
+        if not remaining and account.email:
+            remaining = lockout_map.get(account.email.lower())
+        account.lockout_minutes_remaining = remaining or 0
     
     context = {
         'users': users,
@@ -547,4 +561,36 @@ def reset_user_mfa(request, user_id):
         f"MFA reset for {target.get_full_name() or target.username}. "
         f"They will be prompted to set up two-factor again at next login."
     )
+    return redirect('user_management')
+
+
+@login_required
+@user_passes_test(is_admin_only)
+def unlock_user(request, user_id):
+    """
+    Admin-initiated unlock of a locked-out account. Clears the account's recent
+    failed-login attempts (see FailedLoginAttempt / is_account_locked) so the user
+    can log in again immediately. Audited. POST-only.
+    """
+    target = get_object_or_404(User, id=user_id)
+
+    if request.method != 'POST':
+        return redirect('user_management')
+
+    cleared = unlock_account(target, performed_by=request.user, request=request)
+
+    if cleared:
+        messages.success(
+            request,
+            f'{target.get_full_name() or target.username} has been unlocked '
+            f'({cleared} failed attempt{"" if cleared == 1 else "s"} cleared). '
+            f'They can log in again now.'
+        )
+    else:
+        messages.info(
+            request,
+            f'{target.get_full_name() or target.username} had no recent failed '
+            f'logins, so no active lockout was found.'
+        )
+
     return redirect('user_management')

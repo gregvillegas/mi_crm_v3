@@ -101,3 +101,40 @@ class ScheduledDeliveryImportForm(forms.Form):
                 'Please upload an .xlsx, .xlsm, or .csv file.'
             )
         return uploaded_file
+
+
+class DeliveryHistoryFilterForm(forms.Form):
+    """Bounded-prefix filters for the paginated delivery history list."""
+
+    company = forms.CharField(
+        required=False,
+        max_length=255,
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'placeholder': 'Company starts with...',
+        }),
+    )
+    ae = forms.CharField(
+        required=False,
+        max_length=20,
+        label='AE',
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'placeholder': 'AE starts with...',
+        }),
+    )
+    date = forms.DateField(
+        required=False,
+        widget=forms.DateInput(attrs={
+            'class': 'form-control',
+            'type': 'date',
+        }),
+    )
+    item = forms.CharField(
+        required=False,
+        max_length=255,
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'placeholder': 'Item starts with...',
+        }),
+    )

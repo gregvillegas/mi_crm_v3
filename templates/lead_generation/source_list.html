@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% load humanize %}
+{% load l10n %}
 
 {% block content %}
 <div class="row">
@@ -7,7 +8,7 @@
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h2><i class="fas fa-bullseye text-primary"></i> Lead Sources</h2>
             <div>
-                {% if user.role in 'admin,executive' %}
+                {% if can_create_sources %}
                     <a href="{% url 'lead_generation:lead_source_create' %}" class="btn btn-primary me-2">
                         <i class="fas fa-plus"></i> Add New Source
                     </a>
@@ -19,6 +20,16 @@
         </div>
     </div>
 </div>
+
+{% if can_manage_sources %}
+<div class="visually-hidden">
+    <form>{% csrf_token %}</form>
+</div>
+<p class="text-muted small mb-2">
+    <i class="fas fa-info-circle"></i>
+    Double-click a cost per lead to edit it. Press Enter to save or Escape to cancel.
+</p>
+{% endif %}
 
 <!-- Lead Sources List -->
 <div class="row">
@@ -41,6 +52,7 @@
                                     <th>Cost per Lead</th>
                                     <th>Status</th>
                                     <th>Description</th>
+                                    {% if can_manage_sources %}<th>Actions</th>{% endif %}
                                 </tr>
                             </thead>
                             <tbody>
@@ -66,10 +78,36 @@
                                             {% endif %}
                                         </td>
                                         <td>
-                                            {% if source.cost_per_lead %}
-                                                ₱{{ source.cost_per_lead|floatformat:2 }}
+                                            {% if can_manage_sources %}
+                                                <div class="lead-source-cost-cell">
+                                                    <button type="button"
+                                                            class="btn btn-link p-0 text-decoration-none lead-source-cost-edit"
+                                                            data-cost-value="{{ source.cost_per_lead|unlocalize }}"
+                                                            data-update-url="{% url 'lead_generation:lead_source_update_cost' source.id %}"
+                                                            title="Double-click to edit cost per lead"
+                                                            aria-label="Cost per lead ₱{{ source.cost_per_lead|floatformat:2 }}. Double-click to edit.">
+                                                        <span class="cost-display">₱{{ source.cost_per_lead|floatformat:2 }}</span>
+                                                        <i class="fas fa-pen ms-1 small text-muted" aria-hidden="true"></i>
+                                                    </button>
+                                                    <span class="lead-source-cost-editor d-none align-items-center gap-1">
+                                                        <span class="text-muted">₱</span>
+                                                        <input type="number"
+                                                               class="form-control form-control-sm cost-input"
+                                                               value="{{ source.cost_per_lead|unlocalize }}"
+                                                               min="0"
+                                                               step="0.01"
+                                                               aria-label="Edit cost per lead for {{ source.name }}">
+                                                        <button type="button" class="btn btn-sm btn-success cost-save" title="Save cost">
+                                                            <i class="fas fa-check" aria-hidden="true"></i>
+                                                        </button>
+                                                        <button type="button" class="btn btn-sm btn-outline-secondary cost-cancel" title="Cancel edit">
+                                                            <i class="fas fa-times" aria-hidden="true"></i>
+                                                        </button>
+                                                    </span>
+                                                    <span class="cost-message small ms-1" aria-live="polite"></span>
+                                                </div>
                                             {% else %}
-                                                <span class="text-muted">-</span>
+                                                ₱{{ source.cost_per_lead|floatformat:2 }}
                                             {% endif %}
                                         </td>
                                         <td>
@@ -84,6 +122,15 @@
                                                 {{ source.description|truncatechars:50|default:"-" }}
                                             </small>
                                         </td>
+                                        {% if can_manage_sources %}
+                                            <td class="text-nowrap">
+                                                <a href="{% url 'lead_generation:lead_source_edit' source.id %}"
+                                                   class="btn btn-sm btn-outline-primary"
+                                                   title="Edit source details">
+                                                    <i class="fas fa-edit me-1"></i>Edit
+                                                </a>
+                                            </td>
+                                        {% endif %}
                                     </tr>
                                 {% endfor %}
                             </tbody>
@@ -94,7 +141,7 @@
                         <i class="fas fa-bullseye fa-3x text-muted mb-3"></i>
                         <h4 class="text-muted">No lead sources configured</h4>
                         <p class="text-muted">Create your first lead source to start tracking lead origins.</p>
-                        {% if user.role in 'admin,executive' %}
+                        {% if can_create_sources %}
                             <a href="{% url 'lead_generation:lead_source_create' %}" class="btn btn-primary">
                                 <i class="fas fa-plus"></i> Add First Source
                             </a>
@@ -141,5 +188,121 @@
         </div>
     </div>
 </div>
+{% endif %}
+
+{% if can_manage_sources %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const csrfInput = document.querySelector('[name=csrfmiddlewaretoken]');
+
+    function closeEditor(cell, restoreValue) {
+        const button = cell.querySelector('.lead-source-cost-edit');
+        const editor = cell.querySelector('.lead-source-cost-editor');
+        const input = cell.querySelector('.cost-input');
+        if (restoreValue) input.value = button.dataset.costValue;
+        editor.classList.add('d-none');
+        button.classList.remove('d-none');
+    }
+
+    function openEditor(button) {
+        const cell = button.closest('.lead-source-cost-cell');
+        const editor = cell.querySelector('.lead-source-cost-editor');
+        const input = cell.querySelector('.cost-input');
+        const message = cell.querySelector('.cost-message');
+        message.textContent = '';
+        message.className = 'cost-message small ms-1';
+        input.value = button.dataset.costValue;
+        button.classList.add('d-none');
+        editor.classList.remove('d-none');
+        editor.classList.add('d-inline-flex');
+        input.focus();
+        input.select();
+    }
+
+    async function saveCost(cell) {
+        if (cell.dataset.saving === 'true') return;
+        const button = cell.querySelector('.lead-source-cost-edit');
+        const editor = cell.querySelector('.lead-source-cost-editor');
+        const input = cell.querySelector('.cost-input');
+        const message = cell.querySelector('.cost-message');
+        const saveButton = cell.querySelector('.cost-save');
+        const value = input.value.trim();
+
+        if (value === '' || Number(value) < 0 || !Number.isFinite(Number(value))) {
+            message.textContent = 'Enter a valid non-negative amount.';
+            message.classList.add('text-danger');
+            input.focus();
+            return;
+        }
+
+        cell.dataset.saving = 'true';
+        saveButton.disabled = true;
+        try {
+            const response = await fetch(button.dataset.updateUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+                    'X-CSRFToken': csrfInput.value
+                },
+                body: new URLSearchParams({cost_per_lead: value})
+            });
+            const result = await response.json();
+            if (!response.ok || !result.success) {
+                throw new Error(result.error || 'Unable to save cost per lead.');
+            }
+
+            button.dataset.costValue = result.cost_per_lead;
+            button.querySelector('.cost-display').textContent = result.display;
+            input.value = result.cost_per_lead;
+            editor.classList.remove('d-inline-flex');
+            closeEditor(cell, false);
+            message.textContent = 'Saved';
+            message.classList.add('text-success');
+        } catch (error) {
+            message.textContent = error.message;
+            message.classList.add('text-danger');
+        } finally {
+            cell.dataset.saving = 'false';
+            saveButton.disabled = false;
+        }
+    }
+
+    document.querySelectorAll('.lead-source-cost-edit').forEach(function (button) {
+        button.addEventListener('dblclick', function () {
+            openEditor(button);
+        });
+        button.addEventListener('keydown', function (event) {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                openEditor(button);
+            }
+        });
+    });
+
+    document.querySelectorAll('.lead-source-cost-cell').forEach(function (cell) {
+        const input = cell.querySelector('.cost-input');
+        cell.querySelector('.cost-save').addEventListener('click', function () {
+            saveCost(cell);
+        });
+        cell.querySelector('.cost-cancel').addEventListener('click', function () {
+            closeEditor(cell, true);
+            const message = cell.querySelector('.cost-message');
+            message.textContent = '';
+            message.className = 'cost-message small ms-1';
+        });
+        input.addEventListener('keydown', function (event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                saveCost(cell);
+            } else if (event.key === 'Escape') {
+                closeEditor(cell, true);
+                const message = cell.querySelector('.cost-message');
+                message.textContent = '';
+                message.className = 'cost-message small ms-1';
+            }
+        });
+    });
+});
+</script>
 {% endif %}
 {% endblock %}

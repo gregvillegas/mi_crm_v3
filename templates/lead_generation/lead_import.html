@@ -1,5 +1,21 @@
 {% extends "base.html" %}
 {% load static %}
+{% block extra_css %}
+<style>
+  .lead-import-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .lead-import-actions .btn {
+    width: auto !important;
+    flex: 0 0 auto;
+  }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container mt-4">
   <h2>Import Leads</h2>
@@ -22,8 +38,10 @@
       {{ form.calculate_scores }}
       <label class="form-check-label">Calculate lead scores after import</label>
     </div>
-    <button type="submit" class="btn btn-primary">Import</button>
-    <a href="{% url 'lead_generation:lead_list' %}" class="btn btn-secondary">Cancel</a>
+    <div class="lead-import-actions">
+      <button type="submit" class="btn btn-primary">Import Leads</button>
+      <a href="{% url 'lead_generation:lead_list' %}" class="btn btn-outline-secondary">Cancel</a>
+    </div>
   </form>
   {% if done %}
     <div class="alert alert-info mt-3">

@@ -19,6 +19,9 @@
                     <a href="{% url 'sales_monitoring:export_activities' %}" class="btn btn-outline-primary">
                         <i class="fas fa-download"></i> Export Data
                     </a>
+                    <a href="{% url 'sales_monitoring:activity_calendar' %}?view=month" class="btn btn-info">
+                        <i class="fas fa-calendar-alt"></i> Activity Calendar
+                    </a>
                 </div>
             </div>
         </div>
@@ -27,12 +30,18 @@
     <!-- System-wide Statistics -->
     <div class="row mb-4">
         <div class="col-md-2">
+            {% if can_view_all_activities %}
+            <a href="{% url 'sales_monitoring:all_activities' %}" class="text-decoration-none" aria-label="View all activities by activity type">
+            {% endif %}
             <div class="card border-primary text-center">
                 <div class="card-body">
                     <h3 class="text-primary">{{ stats.total_activities }}</h3>
                     <p class="card-text">Total Activities</p>
                 </div>
             </div>
+            {% if can_view_all_activities %}
+            </a>
+            {% endif %}
         </div>
         <div class="col-md-2">
             <div class="card border-info text-center">

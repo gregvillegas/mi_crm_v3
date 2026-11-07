@@ -155,6 +155,7 @@ class PasswordResetAudit(models.Model):
         ('self_completed', 'Self-service reset completed'),
         ('admin_send_link', 'Admin sent reset link'),
         ('admin_reset_mfa', 'Admin reset MFA'),
+        ('admin_unlock', 'Admin unlocked account'),
     ]
 
     action = models.CharField(max_length=32, choices=ACTION_CHOICES)

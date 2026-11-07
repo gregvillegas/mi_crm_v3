@@ -333,6 +333,17 @@ class LeadSourceForm(forms.ModelForm):
         }
 
 
+class LeadSourceCostUpdateForm(forms.Form):
+    """Validate an inline lead-source cost update."""
+
+    cost_per_lead = forms.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        min_value=0,
+        widget=forms.NumberInput(attrs={'step': '0.01', 'min': '0'}),
+    )
+
+
 class BulkLeadActionForm(forms.Form):
     """Form for performing bulk actions on leads"""
     
