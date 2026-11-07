@@ -1,0 +1,473 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block title %}Pipeline Intelligence{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+        <div>
+            <h1 class="mb-1"><i class="fas fa-magnifying-glass-chart text-primary me-2"></i>Pipeline Intelligence</h1>
+            <p class="text-muted mb-0">
+                {{ period.label }} &middot; Scope: <strong>{{ scope_label }}</strong>
+                <span class="badge bg-info text-dark ms-2"><i class="fas fa-bolt me-1"></i>Live</span>
+            </p>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{% url 'sales_monitoring:pipeline_intelligence_stalled_deals' %}" class="btn btn-outline-danger">
+                <i class="fas fa-hourglass-half me-1"></i>All stalled deals
+            </a>
+            <a href="{% url 'sales_monitoring:dashboard' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-1"></i>Back
+            </a>
+        </div>
+    </div>
+
+    <!-- Controls -->
+    <form method="get" class="card card-body mb-4">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small text-muted mb-1">Fiscal year</label>
+                <select name="fiscal_year" class="form-select form-select-sm">
+                    {% for y in fiscal_year_options %}
+                    <option value="{{ y }}" {% if y == period.fiscal_year %}selected{% endif %}>FY{{ y }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small text-muted mb-1">Period</label>
+                <select name="quarter" class="form-select form-select-sm">
+                    <option value="" {% if not period.quarter %}selected{% endif %}>Full fiscal year</option>
+                    {% for q in period.quarters %}
+                    <option value="{{ q.index }}" {% if q.index == period.quarter %}selected{% endif %}>{{ q.label }} ({{ q.start|date:"M Y" }} – {{ q.end|date:"M Y" }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary btn-sm w-100">
+                    <i class="fas fa-sync"></i> Apply
+                </button>
+            </div>
+        </div>
+    </form>
+
+    <!-- 1. Coverage -->
+    <div class="row mb-4">
+        <div class="col-lg-4 mb-3">
+            <div class="card h-100 border-primary">
+                <div class="card-body">
+                    <h6 class="text-muted mb-1">Open pipeline value</h6>
+                    <h3 class="mb-0">₱{{ coverage.pipeline|floatformat:0|intcomma }}</h3>
+                    <small class="text-muted">{{ coverage.deal_count }} active deal{{ coverage.deal_count|pluralize }}</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4 mb-3">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h6 class="text-muted mb-1">Coverage vs {{ period.quarter|yesno:"quarterly target,annual target" }}</h6>
+                    <h3 class="mb-0">
+                        <span class="badge bg-{{ coverage.coverage_severity }} fs-4">{{ coverage.coverage_display }}</span>
+                    </h3>
+                    <small class="text-muted">
+                        Target ₱{{ coverage.targets.period_target|floatformat:0|intcomma }}
+                        {% if period.quarter %}(FY target ₱{{ coverage.targets.annual|floatformat:0|intcomma }}){% endif %}
+                    </small>
+                    <div class="small text-muted mt-1">Goal: {{ coverage.target_low|floatformat:0 }}×–{{ coverage.target_high|floatformat:0 }}× coverage</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4 mb-3">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h6 class="text-muted mb-1">Coverage vs annual target</h6>
+                    <h3 class="mb-0">
+                        <span class="badge bg-{{ coverage.coverage_annual_severity }} fs-4">{{ coverage.coverage_annual_display }}</span>
+                    </h3>
+                    <small class="text-muted">Annual target ₱{{ coverage.targets.annual|floatformat:0|intcomma }}</small>
+                    <div class="small text-muted mt-1">{{ coverage.targets.source }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header bg-dark text-white">
+            <h5 class="mb-0">Coverage by Team</h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Team</th>
+                            <th class="text-end">Open pipeline</th>
+                            <th class="text-end">Deals</th>
+                            <th class="text-end">Period target</th>
+                            <th class="text-end">Coverage</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for t in coverage.teams %}
+                        <tr>
+                            <td class="fw-semibold">{{ t.name }}</td>
+                            <td class="text-end">₱{{ t.pipeline|floatformat:0|intcomma }}</td>
+                            <td class="text-end">{{ t.deal_count }}</td>
+                            <td class="text-end text-muted">₱{{ t.target|floatformat:0|intcomma }}</td>
+                            <td class="text-end">
+                                <span class="badge bg-{{ t.coverage_severity }}">{{ t.coverage_display }}</span>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="5" class="text-center text-muted py-4">No teams in scope.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. Stalled deals -->
+    <div class="card mb-4">
+        <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Stalled Deals <small class="text-white-50 fw-normal">(past expected close date)</small></h5>
+            <span class="badge bg-light text-dark">{{ stalled.total }} total</span>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Company</th>
+                            <th>Stage</th>
+                            <th>Salesperson</th>
+                            <th class="text-end">Value</th>
+                            <th class="text-end">Expected close</th>
+                            <th class="text-end">Days overdue</th>
+                            <th class="text-end">Probability</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in stalled.rows %}
+                        <tr>
+                            <td class="fw-semibold">
+                                {{ row.company }}
+                                {% if row.high_value %}<span class="badge bg-danger ms-1">High value</span>{% endif %}
+                            </td>
+                            <td>{{ row.stage }}</td>
+                            <td>{{ row.salesperson }}</td>
+                            <td class="text-end">₱{{ row.value|floatformat:0|intcomma }}</td>
+                            <td class="text-end text-muted">{{ row.expected_close_date|date:"M j, Y" }}</td>
+                            <td class="text-end text-danger fw-semibold">{{ row.days_overdue }}</td>
+                            <td class="text-end">{{ row.probability }}%</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="7" class="text-center text-muted py-4">No stalled deals. Nothing is past its close date.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% if stalled.total > stalled.preview_limit %}
+        <div class="card-footer text-center">
+            <a href="{% url 'sales_monitoring:pipeline_intelligence_stalled_deals' %}" class="btn btn-outline-danger btn-sm">
+                View all {{ stalled.total }} stalled deals
+            </a>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- 3. Performers -->
+    <div class="card mb-4">
+        <div class="card-header bg-dark text-white">
+            <h5 class="mb-0">Top vs Bottom Performers <small class="text-white-50 fw-normal">({{ period.label }})</small></h5>
+        </div>
+        <div class="card-body">
+            <div class="row g-4">
+                <div class="col-lg-6">
+                    <h6 class="text-success"><i class="fas fa-trophy me-1"></i>Top performers</h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Salesperson</th>
+                                    <th class="text-end">Won revenue</th>
+                                    <th class="text-end">Won</th>
+                                    <th class="text-end">Lost</th>
+                                    <th class="text-end">Win rate</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for r in performers.top %}
+                                <tr>
+                                    <td>{{ r.name }}</td>
+                                    <td class="text-end">₱{{ r.revenue|floatformat:0|intcomma }}</td>
+                                    <td class="text-end">{{ r.won_count }}</td>
+                                    <td class="text-end">{{ r.lost_count }}</td>
+                                    <td class="text-end">{{ r.win_rate }}%</td>
+                                </tr>
+                                {% empty %}
+                                <tr><td colspan="5" class="text-center text-muted py-3">No closed deals this period.</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="col-lg-6">
+                    <h6 class="text-danger"><i class="fas fa-triangle-exclamation me-1"></i>Needs attention</h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Salesperson</th>
+                                    <th class="text-end">Activities</th>
+                                    <th class="text-end">Won</th>
+                                    <th class="text-end">Lost</th>
+                                    <th class="text-end">Win rate</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for r in performers.bottom %}
+                                <tr>
+                                    <td>{{ r.name }}</td>
+                                    <td class="text-end">{{ r.activities }}</td>
+                                    <td class="text-end">{{ r.won_count }}</td>
+                                    <td class="text-end">{{ r.lost_count }}</td>
+                                    <td class="text-end">{{ r.win_rate }}%</td>
+                                </tr>
+                                {% empty %}
+                                <tr><td colspan="5" class="text-center text-muted py-3">Not enough reps to rank.</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            {% if performers.total_revenue %}
+            <div class="alert alert-light border mt-3 mb-0 small">
+                <i class="fas fa-chart-simple me-1"></i>
+                <strong>{{ performers.pareto_count }}</strong> of {{ performers.rows|length }} reps
+                ({{ performers.pareto_pct }}%) produced 80% of the ₱{{ performers.total_revenue|floatformat:0|intcomma }} won revenue.
+                {{ performers.reps_with_revenue }} rep{{ performers.reps_with_revenue|pluralize }} closed at least one deal.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- 4. Lead quality -->
+    <div class="card mb-4">
+        <div class="card-header bg-dark text-white">
+            <h5 class="mb-0">Lead Source Quality <small class="text-white-50 fw-normal">({{ period.label }})</small></h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Source</th>
+                            <th class="text-end">Leads</th>
+                            <th class="text-end">Qualified</th>
+                            <th class="text-end">Converted</th>
+                            <th class="text-end">Lost</th>
+                            <th class="text-end">Conversion rate</th>
+                            <th class="text-end">Cost / lead</th>
+                            <th class="text-end">Cost / conversion</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for s in lead_quality.per_source %}
+                        <tr>
+                            <td class="fw-semibold">{{ s.name }}</td>
+                            <td class="text-end">{{ s.total }}</td>
+                            <td class="text-end">{{ s.qualified }}</td>
+                            <td class="text-end">{{ s.converted }}</td>
+                            <td class="text-end">{{ s.lost }}</td>
+                            <td class="text-end">{{ s.conversion_rate }}%</td>
+                            <td class="text-end text-muted">₱{{ s.cost_per_lead|floatformat:2|intcomma }}</td>
+                            <td class="text-end">{{ s.cost_per_conversion_display }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="8" class="text-center text-muted py-4">No leads recorded this period.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                    {% if lead_quality.total %}
+                    <tfoot class="table-light fw-semibold">
+                        <tr>
+                            <td>All sources</td>
+                            <td class="text-end">{{ lead_quality.total }}</td>
+                            <td class="text-end">{{ lead_quality.qualified }}</td>
+                            <td class="text-end">{{ lead_quality.converted }}</td>
+                            <td class="text-end">{{ lead_quality.lost }}</td>
+                            <td class="text-end">{{ lead_quality.conversion_rate }}%</td>
+                            <td class="text-end text-muted">—</td>
+                            <td class="text-end text-muted">—</td>
+                        </tr>
+                    </tfoot>
+                    {% endif %}
+                </table>
+            </div>
+        </div>
+        {% if lead_quality.conversions %}
+        <div class="card-footer small text-muted">
+            {{ lead_quality.conversions }} tracked conversion{{ lead_quality.conversions|pluralize }},
+            average {{ lead_quality.avg_days_to_convert|default:"—" }} days to convert,
+            ₱{{ lead_quality.acquisition_cost|floatformat:0|intcomma }} acquisition cost against
+            ₱{{ lead_quality.conversion_value|floatformat:0|intcomma }} converted value.
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- 5. CRM hygiene -->
+    <div class="card mb-4">
+        <div class="card-header bg-dark text-white">
+            <h5 class="mb-0">CRM Hygiene Scorecard</h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Check</th>
+                            <th class="text-end">Count</th>
+                            <th class="text-end">Of total</th>
+                            <th class="text-end">Rate</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for c in hygiene.checks %}
+                        <tr>
+                            <td>
+                                <span class="badge bg-{{ c.severity }} me-1">&nbsp;</span>
+                                {{ c.label }}
+                                <div class="small text-muted">{{ c.hint }}</div>
+                            </td>
+                            <td class="text-end fw-semibold">{{ c.count }}</td>
+                            <td class="text-end text-muted">{% if c.count_only %}—{% else %}{{ c.total }}{% endif %}</td>
+                            <td class="text-end">
+                                {% if c.count_only %}
+                                    <span class="text-muted">—</span>
+                                {% else %}
+                                    {{ c.pct }}%
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 6. Velocity -->
+    <div class="row mb-4">
+        <div class="col-lg-6 mb-3">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h6 class="text-muted mb-1">Average sales cycle (funnel open → won)</h6>
+                    <h3 class="mb-0">{{ velocity.funnel_cycle_days|default:"—" }}{% if velocity.funnel_cycle_days %} days{% endif %}</h3>
+                    <small class="text-muted">
+                        Previous period: {{ velocity.funnel_cycle_prev|default:"—" }}{% if velocity.funnel_cycle_prev %} days{% endif %}
+                        {% if velocity.funnel_cycle_delta is not None %}
+                            <span class="ms-1 {% if velocity.funnel_cycle_delta > 0 %}text-danger{% elif velocity.funnel_cycle_delta < 0 %}text-success{% endif %}">
+                                ({% if velocity.funnel_cycle_delta > 0 %}+{% endif %}{{ velocity.funnel_cycle_delta }} days)
+                            </span>
+                        {% endif %}
+                    </small>
+                    <div class="small text-muted mt-1">{{ velocity.funnel_cycle_count }} won deal{{ velocity.funnel_cycle_count|pluralize }} measured.</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6 mb-3">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h6 class="text-muted mb-1">Average lead → conversion time</h6>
+                    <h3 class="mb-0">{{ velocity.lead_convert_days|default:"—" }}{% if velocity.lead_convert_days %} days{% endif %}</h3>
+                    <small class="text-muted">
+                        Previous period: {{ velocity.lead_convert_prev|default:"—" }}{% if velocity.lead_convert_prev %} days{% endif %}
+                        {% if velocity.lead_convert_delta is not None %}
+                            <span class="ms-1 {% if velocity.lead_convert_delta > 0 %}text-danger{% elif velocity.lead_convert_delta < 0 %}text-success{% endif %}">
+                                ({% if velocity.lead_convert_delta > 0 %}+{% endif %}{{ velocity.lead_convert_delta }} days)
+                            </span>
+                        {% endif %}
+                    </small>
+                    <div class="small text-muted mt-1">{{ velocity.lead_convert_count }} conversion{{ velocity.lead_convert_count|pluralize }} measured.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 7. Discounting & margin (directional) -->
+    <div class="card mb-4">
+        <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Discounting &amp; Margin</h5>
+            <span class="badge bg-warning text-dark">Directional</span>
+        </div>
+        <div class="card-body">
+            <div class="alert alert-warning small d-flex align-items-start gap-2">
+                <i class="fas fa-circle-info mt-1"></i>
+                <div>
+                    Discount amounts are informational only in the current schema, so these figures are
+                    directional rather than audited. Interpret alongside the proposal detail.
+                </div>
+            </div>
+            <div class="row g-3 mb-3">
+                <div class="col-md-3">
+                    <div class="border rounded p-3 h-100">
+                        <div class="small text-muted">Proposals</div>
+                        <div class="h4 mb-0">{{ discounting.count }}</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="border rounded p-3 h-100">
+                        <div class="small text-muted">Quoted value</div>
+                        <div class="h4 mb-0">₱{{ discounting.amount|floatformat:0|intcomma }}</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="border rounded p-3 h-100">
+                        <div class="small text-muted">Total discount</div>
+                        <div class="h4 mb-0">₱{{ discounting.discount|floatformat:0|intcomma }}</div>
+                        <div class="small text-muted">{{ discounting.discount_pct }}% of quoted value</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="border rounded p-3 h-100">
+                        <div class="small text-muted">Effective margin</div>
+                        <div class="h4 mb-0">{{ discounting.effective_margin_pct }}%</div>
+                        <div class="small text-muted">Profit ₱{{ discounting.profit|floatformat:0|intcomma }}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Author</th>
+                            <th class="text-end">Proposals</th>
+                            <th class="text-end">Quoted</th>
+                            <th class="text-end">Discount</th>
+                            <th class="text-end">Discount %</th>
+                            <th class="text-end">Profit</th>
+                            <th class="text-end">Margin %</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in discounting.rows %}
+                        <tr>
+                            <td>{{ r.name }}</td>
+                            <td class="text-end">{{ r.count }}</td>
+                            <td class="text-end">₱{{ r.amount|floatformat:0|intcomma }}</td>
+                            <td class="text-end">₱{{ r.discount|floatformat:0|intcomma }}</td>
+                            <td class="text-end">{{ r.discount_pct }}%</td>
+                            <td class="text-end">₱{{ r.profit|floatformat:0|intcomma }}</td>
+                            <td class="text-end">{{ r.effective_margin_pct }}%</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="7" class="text-center text-muted py-4">No proposals in this period.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

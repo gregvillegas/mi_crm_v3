@@ -4,16 +4,28 @@ from django.utils import timezone
 from datetime import timedelta
 from decimal import Decimal
 from users.models import User
-from teams.models import Team, Group, TeamMembership, SupervisorCommitment
+from teams.models import Team, Group, TeamMembership, RoleMonthlyQuota, CompanyAnnualTarget
 from sales_funnel.models import SalesFunnel
 from sales_monitoring.views import team_performance, get_executive_dashboard_data
 from sales_monitoring.models import ActivityType, SalesActivity
+from sales_monitoring.fiscal import fiscal_year_for_date
 
-class SupervisorCommitmentTests(TestCase):
+class SupervisorGroupQuotaTests(TestCase):
+    """Group monthly targets derive from rep quotas plus the supervisor's RoleMonthlyQuota.
+
+    SupervisorCommitment is a legacy monthly model that no dashboard reads; the AVP
+    dashboard and Team Performance build group targets from TeamMembership.quota plus
+    the supervisor's RoleMonthlyQuota (falling back to RoleMonthlyQuota.DEFAULT_AMOUNT
+    when no explicit quota is set for the month).
+    """
+
     def setUp(self):
         self.client = Client()
         self.avp = User.objects.create_user(username='avp1', password='pass', role='avp')
-        self.supervisor = User.objects.create_user(username='sup1', password='pass', role='supervisor')
+        self.supervisor = User.objects.create_user(
+            username='sup1', password='pass', role='supervisor',
+            first_name='Sup', last_name='One',
+        )
         self.sp1 = User.objects.create_user(username='sp1', password='pass', role='salesperson')
         self.sp2 = User.objects.create_user(username='sp2', password='pass', role='salesperson')
         self.team = Team.objects.create(name='TEAM A', avp=self.avp)
@@ -21,7 +33,7 @@ class SupervisorCommitmentTests(TestCase):
         TeamMembership.objects.create(user=self.sp1, group=self.group, quota=Decimal('100000.00'))
         TeamMembership.objects.create(user=self.sp2, group=self.group, quota=Decimal('100000.00'))
         today = timezone.now().date()
-        month_start = today.replace(day=1)
+        self.month_start = today.replace(day=1)
         SalesFunnel.objects.create(
             date_created=today,
             company_name='Co1',
@@ -44,31 +56,35 @@ class SupervisorCommitmentTests(TestCase):
             deal_outcome='won',
             closed_date=today
         )
-        SupervisorCommitment.objects.create(group=self.group, supervisor=self.supervisor, month=month_start, target_profit=Decimal('300000.00'))
 
-    def test_avp_dashboard_shows_supervisor_commitment_progress(self):
+    def test_avp_dashboard_uses_role_monthly_quota_for_group_target(self):
         self.client.force_login(self.avp)
-        url = reverse('sales_monitoring:dashboard')
-        response = self.client.get(url)
+        response = self.client.get(reverse('sales_monitoring:dashboard'))
+
         self.assertEqual(response.status_code, 200)
-        commitments = response.context.get('supervisor_commitments')
-        self.assertTrue(commitments)
-        item = next((c for c in commitments if c['group'] == self.group), None)
+        achievements = response.context.get('group_achievements')
+        self.assertTrue(achievements)
+        item = next((a for a in achievements if a['group'] == self.group), None)
         self.assertIsNotNone(item)
-        self.assertEqual(item['supervisor_name'], self.supervisor.get_full_name() or self.supervisor.username)
+        self.assertEqual(item['supervisor_name'], self.supervisor.get_full_name())
         self.assertGreater(item['actual_profit'], 0)
-        self.assertEqual(Decimal(item['target_profit']), Decimal('300000.00'))
+        # 100k + 100k rep quotas + supervisor default quota (200k)
+        self.assertEqual(Decimal(item['total_quota']), Decimal('400000.00'))
 
-    def test_team_performance_uses_commitment_for_group_quota(self):
+    def test_team_performance_uses_role_monthly_quota_for_group_quota(self):
+        RoleMonthlyQuota.objects.create(
+            user=self.supervisor, month=self.month_start, amount=Decimal('250000.00'),
+        )
         self.client.force_login(self.avp)
-        url = reverse('sales_monitoring:team_performance')
-        response = self.client.get(url)
+        response = self.client.get(reverse('sales_monitoring:team_performance'))
+
         self.assertEqual(response.status_code, 200)
         data = response.context.get('performance_data')
         self.assertTrue(data)
         gdata = next((d for d in data if d['group'] == self.group), None)
         self.assertIsNotNone(gdata)
-        self.assertEqual(Decimal(gdata['group_quota']), Decimal('300000.00'))
+        # 100k + 100k rep quotas + 250k supervisor RoleMonthlyQuota
+        self.assertEqual(Decimal(gdata['group_quota']), Decimal('450000.00'))
 
 
 class ExecutiveDashboardRankingTests(TestCase):
@@ -425,3 +441,154 @@ class ActivityCalendarAccessTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 403)
+
+
+class PipelineIntelligenceTests(TestCase):
+    """Phase 0 read-only pipeline analytics (sales_monitoring.analytics)."""
+
+    def setUp(self):
+        self.client = Client()
+        self.today = timezone.now().date()
+
+        self.admin = User.objects.create_user(username='pi_admin', password='pass', role='admin')
+        self.avp = User.objects.create_user(username='pi_avp', password='pass', role='avp')
+        self.supervisor = User.objects.create_user(username='pi_sup', password='pass', role='supervisor')
+        self.sp1 = User.objects.create_user(
+            username='pi_sp1', password='pass', role='salesperson',
+            first_name='Pi', last_name='One',
+        )
+        self.team = Team.objects.create(name='PI TEAM', avp=self.avp)
+        self.group = Group.objects.create(
+            name='PI Group', team=self.team, group_type='regular', supervisor=self.supervisor,
+        )
+        TeamMembership.objects.create(user=self.sp1, group=self.group, quota=Decimal('200000.00'))
+
+        # A separate team/rep that must stay out of the AVP's scope.
+        self.other_avp = User.objects.create_user(username='pi_avp2', password='pass', role='avp')
+        self.other_supervisor = User.objects.create_user(username='pi_sup2', password='pass', role='supervisor')
+        self.other_sp = User.objects.create_user(username='pi_sp_other', password='pass', role='salesperson')
+        self.other_team = Team.objects.create(name='PI OTHER TEAM', avp=self.other_avp)
+        self.other_group = Group.objects.create(
+            name='PI Other Group', team=self.other_team, group_type='regular',
+            supervisor=self.other_supervisor,
+        )
+        TeamMembership.objects.create(user=self.other_sp, group=self.other_group, quota=Decimal('200000.00'))
+
+        # Overdue, high-value active deal owned by sp1.
+        SalesFunnel.objects.create(
+            date_created=self.today,
+            company_name='Stalled Co',
+            requirement_description='Overdue requirement',
+            cost=Decimal('300000.00'),
+            retail=Decimal('600000.00'),
+            stage='quoted',
+            salesperson=self.sp1,
+            expected_close_date=self.today - timedelta(days=10),
+        )
+        # Active deal that is not yet due.
+        SalesFunnel.objects.create(
+            date_created=self.today,
+            company_name='Healthy Co',
+            requirement_description='Future requirement',
+            cost=Decimal('50000.00'),
+            retail=Decimal('100000.00'),
+            stage='quoted',
+            salesperson=self.sp1,
+            expected_close_date=self.today + timedelta(days=10),
+        )
+        # Won deal in the period (feeds performer/velocity).
+        SalesFunnel.objects.create(
+            date_created=self.today - timedelta(days=20),
+            company_name='Won Co',
+            requirement_description='Won requirement',
+            cost=Decimal('120000.00'),
+            retail=Decimal('200000.00'),
+            stage='quoted',
+            salesperson=self.sp1,
+            deal_outcome='won',
+            is_closed=True,
+            closed_date=self.today,
+        )
+        # Overdue active deal owned by an out-of-scope rep.
+        SalesFunnel.objects.create(
+            date_created=self.today,
+            company_name='Other Co',
+            requirement_description='Other requirement',
+            cost=Decimal('900000.00'),
+            retail=Decimal('900000.00'),
+            stage='quoted',
+            salesperson=self.other_sp,
+            expected_close_date=self.today - timedelta(days=30),
+        )
+
+    def test_executive_can_open_pipeline_intelligence(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse('sales_monitoring:pipeline_intelligence'))
+
+        self.assertEqual(response.status_code, 200)
+        for key in ('period', 'coverage', 'stalled', 'performers',
+                    'lead_quality', 'hygiene', 'velocity', 'discounting'):
+            self.assertIn(key, response.context)
+        # The page is reachable from the Monitoring menu.
+        self.assertContains(response, reverse('sales_monitoring:pipeline_intelligence'))
+
+    def test_non_executive_cannot_open_pipeline_intelligence(self):
+        self.client.force_login(self.sp1)
+        response = self.client.get(reverse('sales_monitoring:pipeline_intelligence'))
+        self.assertEqual(response.status_code, 403)
+
+    def test_stalled_deals_flag_only_overdue_active_deals(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse('sales_monitoring:pipeline_intelligence'))
+
+        stalled = response.context['stalled']
+        companies = [row['company'] for row in stalled['rows']]
+        self.assertIn('Stalled Co', companies)
+        self.assertIn('Other Co', companies)
+        self.assertNotIn('Healthy Co', companies)
+        self.assertNotIn('Won Co', companies)
+
+        row = next(r for r in stalled['rows'] if r['company'] == 'Stalled Co')
+        self.assertEqual(row['days_overdue'], 10)
+        self.assertTrue(row['high_value'])
+
+    def test_stalled_drilldown_paginates_and_filters_by_value(self):
+        self.client.force_login(self.admin)
+        url = reverse('sales_monitoring:pipeline_intelligence_stalled_deals')
+
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['total'], 2)
+
+        # Both 600k and 900k clear the 500k bar.
+        filtered = self.client.get(url, {'min_value': '500000'})
+        self.assertEqual(filtered.context['total'], 2)
+
+        # Nothing clears 1M.
+        high = self.client.get(url, {'min_value': '1000000'})
+        self.assertEqual(high.context['total'], 0)
+
+    def test_coverage_uses_company_annual_target(self):
+        fy = fiscal_year_for_date(self.today)
+        CompanyAnnualTarget.objects.create(year=fy, amount=Decimal('4000000.00'))
+
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse('sales_monitoring:pipeline_intelligence'))
+
+        coverage = response.context['coverage']
+        self.assertEqual(coverage['targets']['annual'], Decimal('4000000.00'))
+        self.assertEqual(coverage['targets']['source'], 'Company annual target')
+        # Open pipeline = 600k + 100k + 900k (won deal excluded).
+        self.assertEqual(coverage['pipeline'], Decimal('1600000.00'))
+
+    def test_avp_scope_excludes_other_teams(self):
+        self.client.force_login(self.avp)
+        response = self.client.get(reverse('sales_monitoring:pipeline_intelligence'))
+
+        self.assertEqual(response.status_code, 200)
+        coverage = response.context['coverage']
+        # AVP sees only their own team's pipeline: 600k + 100k.
+        self.assertEqual(coverage['pipeline'], Decimal('700000.00'))
+        companies = [row['company'] for row in response.context['stalled']['rows']]
+        self.assertIn('Stalled Co', companies)
+        self.assertNotIn('Other Co', companies)

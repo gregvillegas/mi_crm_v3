@@ -791,6 +791,7 @@
                                     {% endif %}
                                     {% if user.role in 'avp,admin,president,gm,vp' %}
                                         <li><a class="dropdown-item" href="{% url 'sales_monitoring:team_performance' %}"><i class="fas fa-users me-2"></i>Team Performance</a></li>
+                                        <li><a class="dropdown-item" href="{% url 'sales_monitoring:pipeline_intelligence' %}"><i class="fas fa-magnifying-glass-chart me-2"></i>Pipeline Intelligence</a></li>
                                     {% endif %}
                                     {% if user.role in 'supervisor,asm,teamlead' %}
                                         <li><a class="dropdown-item" href="{% url 'sales_monitoring:group_performance' %}"><i class="fas fa-user-friends me-2"></i>Group Performance</a></li>

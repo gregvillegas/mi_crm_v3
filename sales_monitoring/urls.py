@@ -25,6 +25,10 @@ urlpatterns = [
     path('fiscal-year-comparison/', views.fiscal_year_comparison, name='fiscal_year_comparison'),
     path('fiscal-year-comparison/export/excel/', views.export_fiscal_year_comparison_excel, name='export_fiscal_year_comparison_excel'),
     path('fiscal-year-comparison/export/pdf/', views.export_fiscal_year_comparison_pdf, name='export_fiscal_year_comparison_pdf'),
+
+    # Pipeline Intelligence (Phase 0 — read-only)
+    path('pipeline-intelligence/', views.pipeline_intelligence, name='pipeline_intelligence'),
+    path('pipeline-intelligence/stalled-deals/', views.pipeline_intelligence_stalled_deals, name='pipeline_intelligence_stalled_deals'),
     
     # Activity management
     path('activity/create/', views.create_activity, name='create_activity'),

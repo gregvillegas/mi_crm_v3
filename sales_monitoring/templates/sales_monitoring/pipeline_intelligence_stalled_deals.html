@@ -1,0 +1,105 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block title %}Stalled Deals - Pipeline Intelligence{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+        <div>
+            <h1 class="mb-1"><i class="fas fa-hourglass-half text-danger me-2"></i>Stalled Deals</h1>
+            <p class="text-muted mb-0">
+                {{ total }} active deal{{ total|pluralize }} past their expected close date
+            </p>
+        </div>
+        <a href="{% url 'sales_monitoring:pipeline_intelligence' %}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i>Back to Pipeline Intelligence
+        </a>
+    </div>
+
+    <form method="get" class="card card-body mb-3">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small text-muted mb-1">Minimum deal value</label>
+                <select name="min_value" class="form-select form-select-sm">
+                    <option value="" {% if not min_value %}selected{% endif %}>All values</option>
+                    {% for v in value_filters %}
+                    <option value="{{ v }}" {% if min_value == v|stringformat:"s" %}selected{% endif %}>₱{{ v|intcomma }}+</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary btn-sm w-100">
+                    <i class="fas fa-filter"></i> Apply
+                </button>
+            </div>
+            <div class="col-md-6 text-md-end">
+                <span class="small text-muted">
+                    High-value bar: ₱{{ high_value_threshold|floatformat:0|intcomma }}
+                </span>
+            </div>
+        </div>
+    </form>
+
+    <div class="card">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Company</th>
+                            <th>Stage</th>
+                            <th>Salesperson</th>
+                            <th class="text-end">Value</th>
+                            <th class="text-end">Expected close</th>
+                            <th class="text-end">Days overdue</th>
+                            <th class="text-end">Probability</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in rows %}
+                        <tr>
+                            <td class="fw-semibold">
+                                {{ row.company }}
+                                {% if row.high_value %}<span class="badge bg-danger ms-1">High value</span>{% endif %}
+                            </td>
+                            <td>{{ row.stage }}</td>
+                            <td>{{ row.salesperson }}</td>
+                            <td class="text-end">₱{{ row.value|floatformat:0|intcomma }}</td>
+                            <td class="text-end text-muted">{{ row.expected_close_date|date:"M j, Y" }}</td>
+                            <td class="text-end text-danger fw-semibold">{{ row.days_overdue }}</td>
+                            <td class="text-end">{{ row.probability }}%</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="7" class="text-center text-muted py-5">No stalled deals match this filter.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        {% if page_obj.paginator.num_pages > 1 %}
+        <div class="card-footer d-flex justify-content-between align-items-center gap-2">
+            <span class="text-muted small">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+            <nav aria-label="Stalled deals pages">
+                <ul class="pagination pagination-sm mb-0">
+                    <li class="page-item {% if not page_obj.has_previous %}disabled{% endif %}">
+                        {% if page_obj.has_previous %}
+                            <a class="page-link" href="?{% if pagination_query %}{{ pagination_query }}&amp;{% endif %}page={{ page_obj.previous_page_number }}">Previous</a>
+                        {% else %}
+                            <span class="page-link">Previous</span>
+                        {% endif %}
+                    </li>
+                    <li class="page-item {% if not page_obj.has_next %}disabled{% endif %}">
+                        {% if page_obj.has_next %}
+                            <a class="page-link" href="?{% if pagination_query %}{{ pagination_query }}&amp;{% endif %}page={{ page_obj.next_page_number }}">Next</a>
+                        {% else %}
+                            <span class="page-link">Next</span>
+                        {% endif %}
+                    </li>
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

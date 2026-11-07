@@ -1,4 +1,5 @@
 from django.shortcuts import render, get_object_or_404, redirect
+from django.urls import reverse
 from django.utils import timezone
 from django.contrib.auth.decorators import login_required, user_passes_test
 from .models import Team, Group, TeamMembership, SupervisorCommitment, asm_scoped_groups
@@ -207,10 +208,28 @@ def update_member_quota(request, pk):
         form = TeamMembershipQuotaForm(request.POST, instance=membership)
         if form.is_valid():
             form.save()
+            if request.user.role in {'avp', 'admin', 'president', 'gm', 'vp'}:
+                return redirect('quota_management')
             return redirect('group_members', pk=group.pk)
     else:
         form = TeamMembershipQuotaForm(instance=membership)
-    return render(request, 'teams/update_quota.html', {'form': form, 'membership': membership, 'group': group, 'title': f'Update Quota - {membership.user.get_full_name() or membership.user.username}'})
+    quota_manager_roles = {'avp', 'admin', 'president', 'gm', 'vp'}
+    return render(request, 'teams/update_quota.html', {
+        'form': form,
+        'membership': membership,
+        'group': group,
+        'title': f'Update Quota - {membership.user.get_full_name() or membership.user.username}',
+        'back_url': (
+            reverse('quota_management')
+            if request.user.role in quota_manager_roles
+            else reverse('group_members', kwargs={'pk': group.pk})
+        ),
+        'back_url_label': (
+            'Back to Quota Management'
+            if request.user.role in quota_manager_roles
+            else 'Back to Members'
+        ),
+    })
 
 @login_required
 @user_passes_test(can_manage_groups)
@@ -398,10 +417,27 @@ def update_role_quota(request, user_id):
             form.save()
             from django.contrib import messages
             messages.success(request, 'Monthly quota updated.')
+            if request.user.role in {'avp', 'admin', 'president', 'gm', 'vp'}:
+                return redirect('quota_management')
             return redirect('sales_monitoring:dashboard')
     else:
         form = RoleMonthlyQuotaForm(instance=quota)
-    return render(request, 'teams/update_role_quota.html', {'form': form, 'target_user': target_user, 'title': f'Update Quota - {target_user.get_full_name() or target_user.username}'})
+    quota_manager_roles = {'avp', 'admin', 'president', 'gm', 'vp'}
+    return render(request, 'teams/update_role_quota.html', {
+        'form': form,
+        'target_user': target_user,
+        'title': f'Update Quota - {target_user.get_full_name() or target_user.username}',
+        'back_url_name': (
+            'quota_management'
+            if request.user.role in quota_manager_roles
+            else 'sales_monitoring:dashboard'
+        ),
+        'back_url_label': (
+            'Back to Quota Management'
+            if request.user.role in quota_manager_roles
+            else 'Back to Dashboard'
+        ),
+    })
 
 def can_manage_company_target(user):
     return user.role in ['gm', 'vp', 'admin']

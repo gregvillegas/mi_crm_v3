@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from django.test import Client, TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from customers.models import Customer
 from customers.permissions import visible_customers_queryset
@@ -10,6 +11,7 @@ from sales_proposals.models import Proposal, ProposalItem
 from sales_proposals.views import update_sales_funnel, visible_proposals_queryset
 from teams.models import (
     Group,
+    RoleMonthlyQuota,
     Team,
     TeamMembership,
     tech_manager_team_ids,
@@ -310,14 +312,61 @@ class QuotaManagementExecutiveAccessTests(TestCase):
                     username=f'quota_editor_{role}', password='pass', role=role
                 )
                 self.client.force_login(executive)
+                edit_response = self.client.get(
+                    reverse('update_member_quota', args=[self.membership.pk])
+                )
+                self.assertEqual(edit_response.status_code, 200)
+                self.assertContains(edit_response, 'Save Quota')
+                self.assertContains(edit_response, 'Cancel')
+                self.assertContains(edit_response, 'Back to Quota Management')
+                self.assertIn(
+                    'quota-amount-input',
+                    edit_response.context['form'].fields['quota'].widget.attrs['class'],
+                )
+                self.assertContains(edit_response, 'max-width: 360px')
+
                 response = self.client.post(
                     reverse('update_member_quota', args=[self.membership.pk]),
                     {'quota': '150000.00'},
                 )
 
-                self.assertEqual(response.status_code, 302)
+                self.assertRedirects(response, reverse('quota_management'))
                 self.membership.refresh_from_db()
                 self.assertEqual(self.membership.quota, Decimal('150000.00'))
+
+    def test_role_quota_edit_saves_and_returns_to_quota_management(self):
+        quota_url = reverse('update_role_quota', args=[self.supervisor.pk])
+        for role in ('gm', 'vp'):
+            with self.subTest(role=role):
+                executive = User.objects.create_user(
+                    username=f'role_quota_editor_{role}',
+                    password='pass',
+                    role=role,
+                )
+                self.client.force_login(executive)
+
+                edit_response = self.client.get(quota_url)
+                self.assertEqual(edit_response.status_code, 200)
+                self.assertContains(edit_response, 'Save Quota')
+                self.assertContains(edit_response, 'Back to Quota Management')
+                self.assertIn(
+                    'quota-amount-input',
+                    edit_response.context['form'].fields['amount'].widget.attrs['class'],
+                )
+                self.assertContains(edit_response, 'max-width: 360px')
+
+                response = self.client.post(
+                    quota_url,
+                    {'amount': '175000.00', 'notes': 'Monthly quota update'},
+                )
+
+                self.assertRedirects(response, reverse('quota_management'))
+                quota = RoleMonthlyQuota.objects.get(
+                    user=self.supervisor,
+                    month=timezone.now().date().replace(day=1),
+                )
+                self.assertEqual(quota.amount, Decimal('175000.00'))
+                self.assertEqual(quota.notes, 'Monthly quota update')
 
     def test_avp_quota_management_remains_limited_to_own_team(self):
         self.client.force_login(self.avp_a)

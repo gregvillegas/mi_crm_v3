@@ -29,7 +29,7 @@ from .forms import (
     EmailActivityForm, ProposalActivityForm, TaskActivityForm,
     ProofOfConceptForm
 )
-from teams.models import Group, Team, TeamMembership, SupervisorCommitment, asm_scoped_groups, tech_manager_team_ids, technical_sales_users_for_teams
+from teams.models import Group, Team, TeamMembership, asm_scoped_groups, tech_manager_team_ids, technical_sales_users_for_teams
 from users.models import User
 from customers.models import Customer
 
@@ -3019,3 +3019,80 @@ def export_fiscal_year_comparison_pdf(request):
     resp = HttpResponse(buf.getvalue(), content_type='application/pdf')
     resp['Content-Disposition'] = f'attachment; filename="{filename}"'
     return resp
+
+
+# --- Pipeline Intelligence (Phase 0) ---------------------------------------
+# Read-only analytics built from existing data. Executives see the whole
+# company; AVPs are narrowed to their own teams by scoped_user_ids().
+PIPELINE_INTELLIGENCE_ROLES = {'admin', 'gm', 'vp', 'president', 'avp'}
+
+# Selectable "minimum value" filters on the stalled-deals drill-down.
+STALLED_VALUE_FILTERS = [500000, 1000000, 5000000]
+
+
+def _pipeline_fiscal_year_options(current_fy):
+    today = timezone.now().date()
+    this_fy = today.year + 1 if today.month == 12 else today.year
+    options = {this_fy, this_fy - 1, this_fy - 2, current_fy}
+    return sorted(options, reverse=True)
+
+
+def _pipeline_int_params(request):
+    """Read fiscal_year + quarter from the query string, defaulting to today."""
+    from .fiscal import fiscal_year_for_date
+    today = timezone.now().date()
+    year_raw = request.GET.get('fiscal_year', '')
+    fiscal_year = int(year_raw) if year_raw.isdigit() else fiscal_year_for_date(today)
+    quarter_raw = request.GET.get('quarter', '')
+    quarter = int(quarter_raw) if quarter_raw in ('1', '2', '3', '4') else None
+    return fiscal_year, quarter
+
+
+@login_required
+def pipeline_intelligence(request):
+    """Phase 0 read-only pipeline analytics dashboard."""
+    if request.user.role not in PIPELINE_INTELLIGENCE_ROLES:
+        return HttpResponseForbidden("You don't have permission to view pipeline intelligence.")
+
+    from .analytics import build_pipeline_intelligence
+    fiscal_year, quarter = _pipeline_int_params(request)
+
+    context = build_pipeline_intelligence(request.user, fiscal_year, quarter)
+    context['fiscal_year_options'] = _pipeline_fiscal_year_options(fiscal_year)
+    return render(request, 'sales_monitoring/pipeline_intelligence.html', context)
+
+
+@login_required
+def pipeline_intelligence_stalled_deals(request):
+    """Full paginated list of active deals past their expected close date."""
+    if request.user.role not in PIPELINE_INTELLIGENCE_ROLES:
+        return HttpResponseForbidden("You don't have permission to view pipeline intelligence.")
+
+    from decimal import Decimal, InvalidOperation
+    from crm_project.scoping import scoped_user_ids
+    from .analytics import stalled_queryset, stalled_rows, HIGH_VALUE_THRESHOLD
+
+    today = timezone.now().date()
+    min_value = None
+    min_raw = request.GET.get('min_value', '')
+    if min_raw:
+        try:
+            min_value = Decimal(min_raw)
+        except (InvalidOperation, ValueError):
+            min_value = None
+
+    queryset = stalled_queryset(scoped_user_ids(request.user), today, min_value=min_value)
+    paginator = Paginator(queryset, 50)
+    page_obj = paginator.get_page(request.GET.get('page'))
+    pagination_params = request.GET.copy()
+    pagination_params.pop('page', None)
+
+    return render(request, 'sales_monitoring/pipeline_intelligence_stalled_deals.html', {
+        'rows': stalled_rows(page_obj.object_list, today),
+        'total': paginator.count,
+        'page_obj': page_obj,
+        'min_value': min_raw,
+        'value_filters': STALLED_VALUE_FILTERS,
+        'high_value_threshold': HIGH_VALUE_THRESHOLD,
+        'pagination_query': pagination_params.urlencode(),
+    })

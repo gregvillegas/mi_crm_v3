@@ -186,13 +186,19 @@ class TeamMembershipQuotaForm(forms.ModelForm):
     class Meta:
         model = TeamMembership
         fields = ['quota']
+        widgets = {
+            'quota': forms.NumberInput(attrs={
+                'class': 'form-control quota-amount-input',
+                'step': '0.01',
+                'min': '0',
+            }),
+        }
         
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.helper = FormHelper()
         self.helper.layout = Layout(
             Field('quota', wrapper_class='mb-3'),
-            Submit('submit', 'Update Quota', css_class='btn btn-primary')
         )
 
 class SupervisorCommitmentForm(forms.ModelForm):
@@ -241,13 +247,24 @@ class RoleMonthlyQuotaForm(forms.ModelForm):
     class Meta:
         model = RoleMonthlyQuota
         fields = ['amount', 'notes']
+        widgets = {
+            'amount': forms.NumberInput(attrs={
+                'class': 'form-control quota-amount-input',
+                'step': '0.01',
+                'min': '0',
+            }),
+            'notes': forms.Textarea(attrs={
+                'class': 'form-control',
+                'rows': 3,
+            }),
+        }
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.helper = FormHelper()
         self.helper.layout = Layout(
             Field('amount', wrapper_class='mb-3'),
             Field('notes', wrapper_class='mb-3'),
-            Submit('submit', 'Save Quota', css_class='btn btn-primary')
         )
 
 class CompanyAnnualTargetForm(forms.ModelForm):
