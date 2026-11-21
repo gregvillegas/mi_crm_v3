@@ -1106,16 +1106,13 @@ def create_activity(request):
             activity.salesperson = form.cleaned_data.get('resolved_salesperson')
             activity.save()
 
-            if activity.customer and (not activity.customer.is_active or activity.customer.auto_inactive_flag):
-                reactivated_fields = []
-                if not activity.customer.is_active:
-                    activity.customer.is_active = True
-                    reactivated_fields.append('is_active')
-                if activity.customer.auto_inactive_flag:
-                    activity.customer.auto_inactive_flag = False
-                    reactivated_fields.append('auto_inactive_flag')
-                if reactivated_fields:
-                    activity.customer.save(update_fields=reactivated_fields)
+            if activity.customer and activity.status == 'completed':
+                from customers.status import clear_auto_inactive_for_engagement
+                clear_auto_inactive_for_engagement(
+                    activity.customer,
+                    source='a completed sales activity',
+                    changed_by=user,
+                )
             
             # Log the activity creation
             ActivityLog.log_activity_change(
@@ -1299,6 +1296,14 @@ def update_activity(request, pk):
                 activity.actual_end = timezone.now()
                 activity.save()
             
+            if activity.customer and activity.status == 'completed':
+                from customers.status import clear_auto_inactive_for_engagement
+                clear_auto_inactive_for_engagement(
+                    activity.customer,
+                    source='a completed sales activity',
+                    changed_by=user,
+                )
+
             messages.success(request, 'Activity updated successfully!')
             return redirect('sales_monitoring:activity_detail', pk=pk)
     else:
@@ -1327,6 +1332,14 @@ def quick_log_activity(request):
             activity.salesperson = user
             activity.save()
             
+            if activity.customer and activity.status == 'completed':
+                from customers.status import clear_auto_inactive_for_engagement
+                clear_auto_inactive_for_engagement(
+                    activity.customer,
+                    source='a completed sales activity',
+                    changed_by=user,
+                )
+
             ActivityLog.log_activity_change(
                 activity=activity,
                 action='created',

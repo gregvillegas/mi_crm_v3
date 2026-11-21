@@ -80,7 +80,9 @@
                             </div>
                         </div>
                         <div class="card-body">
-                            <h6 class="text-muted small text-uppercase fw-bold mb-3 border-bottom pb-2">Salespeople Quotas</h6>
+                            <h6 class="text-muted small text-uppercase fw-bold mb-3 border-bottom pb-2">
+                                {% if g_data.group.group_type == 'tsg' %}Technical Sales Quotas{% else %}Salespeople Quotas{% endif %}
+                            </h6>
                             <div class="table-responsive">
                                 <table class="table table-sm table-hover mb-0" style="font-size: 0.9rem;">
                                     <thead>
@@ -92,7 +94,7 @@
                                     </thead>
                                     <tbody>
                                         {% for membership in g_data.memberships %}
-                                        {% if membership.user.role == 'salesperson' %}
+                                        {% if membership.user.role in 'salesperson,technical_sales' %}
                                         <tr>
                                             <td class="align-middle">
                                                 <div class="d-flex align-items-center">
@@ -104,6 +106,9 @@
                                                         </div>
                                                     {% endif %}
                                                     {{ membership.user.get_full_name }}
+                                                    {% if membership.user.role == 'technical_sales' %}
+                                                    <span class="badge bg-info text-dark ms-2" style="font-size: 0.65rem;">TS</span>
+                                                    {% endif %}
                                                 </div>
                                             </td>
                                             <td class="text-end align-middle fw-bold">₱{{ membership.quota|floatformat:2|intcomma }}</td>
@@ -116,7 +121,9 @@
                                         {% endif %}
                                         {% empty %}
                                         <tr>
-                                            <td colspan="3" class="text-center text-muted fst-italic py-3">No salespeople in this group</td>
+                                            <td colspan="3" class="text-center text-muted fst-italic py-3">
+                                                {% if g_data.group.group_type == 'tsg' %}No technical sales in this group{% else %}No salespeople in this group{% endif %}
+                                            </td>
                                         </tr>
                                         {% endfor %}
                                     </tbody>

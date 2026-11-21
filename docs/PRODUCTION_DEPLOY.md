@@ -401,22 +401,44 @@ python -c "import channels, channels_redis, daphne; print('OK')"
 
 ### 8.2 Install and start Redis
 
+On Ubuntu:
+
 ```bash
 sudo apt-get install -y redis-server
 sudo systemctl enable --now redis-server
 redis-cli ping        # expect: PONG
 ```
 
+On Rocky Linux 10, install Valkey instead. RHEL 10 no longer provides the
+`redis` package. Valkey supports the Redis protocol used by `channels-redis`,
+so keep the same `REDIS_URL` format:
+
+```bash
+sudo dnf install -y valkey
+sudo systemctl enable --now valkey
+valkey-cli ping        # expect: PONG
+```
+
+Ensure the server `.env` contains:
+
+```ini
+REDIS_URL=redis://127.0.0.1:6379/0
+```
+
+Keep the service bound to localhost; do not open port 6379 to the network.
+Valkey's configuration file is `/etc/valkey/valkey.conf`.
+
 Security notes (keep it local-only):
 
-- Redis listens on `127.0.0.1:6379` by default — **do not** expose port 6379 to
-  the network or change `bind` to `0.0.0.0`.
+- Redis/Valkey should listen only on `127.0.0.1:6379` — **do not** expose port
+  6379 to the network or change `bind` to `0.0.0.0`.
 - Optionally set a password in `/etc/redis/redis.conf`:
   ```ini
   requirepass YOUR_REDIS_PASSWORD
   ```
-  then use `REDIS_URL=redis://:YOUR_REDIS_PASSWORD@127.0.0.1:6379/0` in `.env`
-  and restart both Redis and Daphne.
+  For Valkey, edit `/etc/valkey/valkey.conf` instead. Then use
+  `REDIS_URL=redis://:YOUR_REDIS_PASSWORD@127.0.0.1:6379/0` in `.env` and
+  restart the key-value service and both application services.
 
 > **Why Redis on the server?** Gunicorn runs **4 workers** (`--workers 4` in
 > Step 7.1). The in-memory channel layer lives inside a single process, so a
@@ -427,6 +449,14 @@ Security notes (keep it local-only):
 ### 8.3 Run Daphne as a systemd service
 
 If `/etc/systemd/system/mi_crm_daphne.service` does not exist yet, create it:
+> The following unit uses Ubuntu's `www-data` account and `redis-server.service`.
+> On Rocky Linux 10, replace `redis-server.service` with `valkey.service` in
+> both `After=` and `Wants=`, and set `User=` / `Group=` to an account that
+> exists on that host. A good default is the same account used by its working
+> Gunicorn service (often `nginx` on Rocky); verify with
+> `systemctl show gunicorn.service -p User -p Group` and `getent passwd nginx`.
+> The chosen account must be able to read the project and `.env`, and execute
+> the virtualenv's Daphne binary.
 
 ```ini
 [Unit]

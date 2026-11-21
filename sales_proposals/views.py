@@ -1993,11 +1993,8 @@ Best regards,"""
                 status='sent',
             )
             
-            # Log Activity
-            log_sales_activity(proposal, request.user)
-            
-            # Update Funnel
-            update_sales_funnel(proposal)
+            # Update Funnel + sync the proposal's activity (credits the sender)
+            update_sales_funnel(proposal, actor=request.user)
             
             recipients_str = ', '.join(to_list)
             msg = f"Proposal sent to {recipients_str}"
@@ -2060,20 +2057,81 @@ Best regards,"""
 
 @login_required
 def approvals_inbox(request):
-    steps = (
-        ProposalApprovalStep.objects
-        .filter(approver=request.user, status='pending')
-        .annotate(
-            current_pending_level=Min(
-                'proposal__approval_steps__level',
-                filter=Q(proposal__approval_steps__status='pending')
+    """
+    Approvals inbox.
+    - Regular users see only the pending steps assigned to them.
+    - Admin/executives (admin, president, vp, avp, gm) see all pending steps
+      across the company, with the assigned approver's name. Approve/Reject
+      action buttons are shown only when the current user is the assigned
+      approver for that step (approval order is still enforced server-side).
+    """
+    is_overview = _is_exec(request.user)
+
+    if is_overview:
+        steps = (
+            ProposalApprovalStep.objects
+            .filter(status='pending')
+            .annotate(
+                current_pending_level=Min(
+                    'proposal__approval_steps__level',
+                    filter=Q(proposal__approval_steps__status='pending')
+                )
             )
+            .filter(level=F('current_pending_level'))
+            .select_related('proposal', 'proposal__customer', 'approver')
+            .order_by('-proposal__approval_submitted_at', '-created_at')
         )
-        .filter(level=F('current_pending_level'))
-        .select_related('proposal', 'proposal__customer')
-        .order_by('-proposal__approval_submitted_at', '-created_at')
-    )
-    return render(request, 'sales_proposals/approvals_inbox.html', {'steps': steps})
+    else:
+        steps = (
+            ProposalApprovalStep.objects
+            .filter(approver=request.user, status='pending')
+            .annotate(
+                current_pending_level=Min(
+                    'proposal__approval_steps__level',
+                    filter=Q(proposal__approval_steps__status='pending')
+                )
+            )
+            .filter(level=F('current_pending_level'))
+            .select_related('proposal', 'proposal__customer')
+            .order_by('-proposal__approval_submitted_at', '-created_at')
+        )
+    return render(request, 'sales_proposals/approvals_inbox.html', {
+        'steps': steps,
+        'is_overview': is_overview,
+    })
+
+
+@login_required
+def approval_history(request):
+    """
+    Audit trail of all proposal approval decisions (approved, rejected,
+    pending, cancelled) across the company. Restricted to admin/executives.
+    Supports an optional ?status= filter and ?proposal= filter.
+    """
+    if not _is_exec(request.user):
+        messages.error(request, 'You do not have permission to view this page.')
+        return redirect('approvals_inbox')
+
+    status_filter = request.GET.get('status', '').strip()
+    proposal_filter = request.GET.get('proposal', '').strip()
+
+    steps = ProposalApprovalStep.objects.select_related(
+        'proposal', 'proposal__customer', 'approver'
+    ).order_by('-created_at', '-level')
+
+    if status_filter in ('pending', 'approved', 'rejected', 'cancelled'):
+        steps = steps.filter(status=status_filter)
+    if proposal_filter:
+        steps = steps.filter(
+            Q(proposal__proposal_number__icontains=proposal_filter)
+            | Q(proposal__subject__icontains=proposal_filter)
+        )
+
+    return render(request, 'sales_proposals/approval_history.html', {
+        'steps': steps,
+        'status_filter': status_filter,
+        'proposal_filter': proposal_filter,
+    })
 
 @login_required
 def approve_proposal(request, pk):
@@ -2304,27 +2362,78 @@ def approval_tier_seed_defaults(request):
     messages.success(request, f'Default tiers seeded. Created: {created}, Updated: {updated}.')
     return redirect('approval_tier_list')
 
-def log_sales_activity(proposal, user):
-    # Find or create 'Proposal' activity type
+def log_sales_activity(proposal, user=None):
+    """Keep the single proposal-linked activity in sync with the proposal.
+
+    A proposal in progress (draft or awaiting approval) surfaces as an
+    ``in_progress`` activity so the activity feed shows ongoing work for the
+    customer. Because only ``completed`` activities count as engagement, an
+    unsent proposal does not reset the customer's inactivity clock. A successful
+    send flips this same row to ``completed``, so one proposal never produces two
+    activity records.
+    """
+    # Test proposals must not pollute real activity reporting.
+    if getattr(proposal, 'is_test', False):
+        return None
+
     activity_type, _ = ActivityType.objects.get_or_create(
         name='Proposals',
         defaults={'icon': 'fas fa-file-alt', 'color': 'info'}
     )
-    
-    SalesActivity.objects.create(
-        title=f"Sent Proposal: {proposal.proposal_number}",
-        description=f"Sent proposal regarding {proposal.subject} to {proposal.customer.email}",
-        activity_type=activity_type,
-        salesperson=user,
-        customer=proposal.customer,
-        status='completed',
-        priority='high',
-        scheduled_start=timezone.now(),
-        scheduled_end=timezone.now(),
-        actual_start=timezone.now()
-    )
 
-def update_sales_funnel(proposal):
+    now = timezone.now()
+    is_sent = proposal.status == 'sent'
+
+    activity = SalesActivity.objects.filter(proposal=proposal).first()
+    is_new = activity is None
+    if is_new:
+        activity = SalesActivity(proposal=proposal)
+        activity.salesperson = user or proposal.created_by
+    elif not is_sent and activity.status != 'completed':
+        # Still being worked on; keep the owner aligned with whoever last touched it.
+        activity.salesperson = user or proposal.created_by
+
+    activity.activity_type = activity_type
+    activity.customer = proposal.customer
+    activity.priority = 'high'
+
+    if is_sent:
+        # Credit the sender, matching the previous send-only behaviour.
+        activity.salesperson = user or activity.salesperson
+        activity.title = f"Sent Proposal: {proposal.proposal_number}"
+        activity.description = f"Sent proposal regarding {proposal.subject} to {proposal.customer.email}"
+        activity.status = 'completed'
+    else:
+        state = proposal.get_status_display()
+        if proposal.approval_status in ('pending', 'in_progress'):
+            state = f"{state}, {proposal.get_approval_status_display().lower()}"
+        activity.title = f"Proposal Created: {proposal.proposal_number}"
+        activity.description = f"Proposal regarding {proposal.subject} is in progress ({state})."
+        activity.status = 'in_progress'
+
+    if not activity.scheduled_start:
+        activity.scheduled_start = now
+    if not activity.scheduled_end:
+        activity.scheduled_end = now
+    if not activity.actual_start:
+        activity.actual_start = now
+    activity.save()
+
+    if is_sent:
+        from customers.status import clear_auto_inactive_for_engagement
+        clear_auto_inactive_for_engagement(
+            proposal.customer,
+            source='a proposal successfully sent from the CRM',
+            changed_by=user,
+        )
+
+    return activity
+
+def update_sales_funnel(proposal, actor=None):
+    # Keep the proposal's activity in sync on every create/edit/send path that
+    # already fans out through this helper, so a draft is never missed.
+    log_sales_activity(proposal, actor)
+
     # Determine PHP amounts for Sales Funnel (which tracks in PHP)
     retail_php = proposal.quoted_amount_php
     cost_php = proposal.quoted_cost_php * Decimal('1.05')

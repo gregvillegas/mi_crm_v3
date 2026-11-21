@@ -51,6 +51,16 @@ class SalesActivity(models.Model):
                                   limit_choices_to={'role': 'salesperson'})
     customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name='activities',
                                null=True, blank=True)
+    # Set only for activities generated automatically from a proposal. Kept nullable so
+    # manually created activities are unaffected, and one proposal maps to one activity
+    # (see sales_proposals.views.log_sales_activity).
+    proposal = models.ForeignKey(
+        'sales_proposals.Proposal',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='sales_activities',
+    )
     
     # Activity details
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='planned')

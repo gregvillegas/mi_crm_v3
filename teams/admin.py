@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Team, Group, TeamMembership, SupervisorCommitment, SupervisorCommitmentLog, PersonalContribution, AsmPersonalTarget, RoleMonthlyQuota, CompanyAnnualTarget, CompanyAnnualTargetLog
+from .models import Team, Group, TeamMembership, TeamMembershipQuotaLog, SupervisorCommitment, SupervisorCommitmentLog, PersonalContribution, AsmPersonalTarget, RoleMonthlyQuota, CompanyAnnualTarget, CompanyAnnualTargetLog
 
 
 @admin.register(Team)
@@ -69,6 +69,13 @@ class TeamMembershipAdmin(admin.ModelAdmin):
         return f"{manager.get_full_name()} ({obj.group.get_manager_role()})" if manager else "No manager"
     get_manager.short_description = 'Managed By'
     get_manager.admin_order_field = 'group__supervisor'
+
+@admin.register(TeamMembershipQuotaLog)
+class TeamMembershipQuotaLogAdmin(admin.ModelAdmin):
+    list_display = ('team_membership', 'previous_quota', 'new_quota', 'change_type', 'changed_by', 'changed_at')
+    list_filter = ('change_type',)
+    search_fields = ('team_membership__user__username', 'team_membership__user__first_name', 'team_membership__user__last_name', 'changed_by__username')
+    readonly_fields = ('team_membership', 'previous_quota', 'new_quota', 'change_type', 'changed_by', 'changed_at')
 
 @admin.register(SupervisorCommitment)
 class SupervisorCommitmentAdmin(admin.ModelAdmin):

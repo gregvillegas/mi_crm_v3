@@ -1042,6 +1042,13 @@ def close_entry(request, entry_id):
         
         # Log purchase to customer history
         if entry.customer:
+            from customers.status import clear_auto_inactive_for_engagement
+            clear_auto_inactive_for_engagement(
+                entry.customer,
+                source=f'a deal marked {entry.deal_outcome.upper()}',
+                changed_by=request.user,
+            )
+
             action = 'deal_won' if won else 'deal_lost'
             profit = (entry.retail or Decimal('0')) - (entry.cost or Decimal('0'))
             description = f"Deal {('WON' if won else 'LOST')} for {entry.company_name} (SRP ₱{entry.retail}, Cost ₱{entry.cost}, Profit ₱{profit})."

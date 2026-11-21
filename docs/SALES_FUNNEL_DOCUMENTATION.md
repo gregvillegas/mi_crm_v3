@@ -152,8 +152,106 @@ Closed deals remain queryable. "View Deals History" and the dashboards aggregate
 
 ### Maintenance tools (admin/exec)
 - **Normalize Stages** (`normalize_funnel_stages`, admin/president/gm/vp) — re-applies the ₱500K Green/Blue rule across open project/services entries.
-- **`promote_quoted_funnel`** management command — promotes stale `quoted` entries (older than the current week) into Green/Blue by the threshold.
+- **`promote_quoted_funnel`** management command — promotes stale `quoted` entries (older than the current week) into Green/Blue by the threshold. This one runs on a schedule (see [§4a](#4a-scheduled-maintenance--promote-stale-quoted-entries-cron)).
 - **Clear Stage** (`clear_stage_entries`, admin/exec) — bulk-deletes entries by stage for a given month. ⚠️ This is also a **hard delete** of many rows — same cautions as §3, at scale.
+
+---
+
+## 4a. Scheduled maintenance — promote stale Quoted entries (cron)
+
+**Command:** `python manage.py promote_quoted_funnel`
+**File:** `sales_funnel/management/commands/promote_quoted_funnel.py`
+**Audience:** admins / whoever maintains the production server.
+
+### What it does
+
+The Pink (`quoted`) funnel is meant to be short-lived — it holds fresh quotes that have not yet been classified as Green (project) or Blue (services). In normal use the dashboard "move" arrows and `save()` handle that. This command is the safety net: it sweeps up `quoted` entries that have been sitting untouched since before the current week and files them into Green/Blue by the ₱500,000 rule, so the Pink funnel doesn't accumulate stale quotes.
+
+Selection criteria (all must match):
+
+| Condition | Value |
+|---|---|
+| `is_active` | `True` (live pipeline only) |
+| `is_closed` | `False` |
+| `deal_outcome` | `'active'` |
+| `stage` | `'quoted'` |
+| `date_created` | strictly **before the Monday of the current week** |
+
+For each match it compares `display_retail` to **₱500,000**:
+
+- `display_retail >= 500000` → `stage = 'project'` (Green)
+- otherwise → `stage = 'services'` (Blue)
+
+`display_retail` is the linked proposal's quoted PHP amount when the entry has a proposal, otherwise the entry's stored `retail` — the same value the auto-classification in `save()` uses. The threshold is the same ₱500,000 shown in §1, so a scheduled run and a manual stage move agree.
+
+Only `quoted` entries are touched. `closable` entries are left alone (that stage is a deliberate "expected to close this month" marker), and closed/won/lost or removed entries are never revisited.
+
+The cutoff is recalculated from the run date as:
+
+```python
+week_start = today - timedelta(days=today.weekday())   # Monday of the current week
+```
+
+### Running the command
+
+```bash
+# Normal run — promote stale quoted entries (Monday cutoff derived from today)
+python manage.py promote_quoted_funnel
+
+# Backfill / testing — pretend "today" is a specific date (YYYY-MM-DD).
+# Here 2026-11-18 is a Wednesday, so the cutoff rolls back to Monday 2026-11-16.
+python manage.py promote_quoted_funnel --today 2026-11-18
+```
+
+Each run prints a one-line summary:
+
+```text
+Promoted quoted funnel entries older than 2026-11-16: green=4, blue=7.
+```
+
+The command is **idempotent and safe to repeat.** Once an entry is promoted it is no longer `quoted`, so it can never be selected twice. Re-running the same day produces `green=0, blue=0`.
+
+> **Note — no audit row:** the command promotes with a bulk `SalesFunnel.objects.update()`, which **bypasses `save()`** and therefore does **not** write a `CustomerHistory` record. Manual stage moves remain the auditable path. If you need a per-entry trail here, that would be a small change to the command.
+
+> **Note — one-way:** this command only moves `quoted → project/services`. It never moves an entry back to `quoted`, and it does not touch `closable`.
+
+### Production scheduling (cron)
+
+This job is **not scheduled inside the app** and is **not** part of `deploy2.sh`; on the production server it must be run by cron.
+
+A **weekly** run is appropriate, because the cutoff is the start of the current week: a Monday run promotes everything created before that Monday. (Running it daily also works — later runs are no-ops.)
+
+#### 1. Edit the crontab
+
+Log in as the user that runs the Django app (e.g. `www-data`, `ubuntu`, or your deploy user) and open the crontab:
+
+```bash
+crontab -e
+```
+
+#### 2. Add the cron entry
+
+Adjust the paths to match your deployment (these match the layout used in the other maintenance docs: app at `/private/var/www/mi_crm`, venv at `/private/var/www/mi_crm/venv`):
+
+```text
+# Promote stale Quoted funnel entries into Green/Blue — Mondays at 6:00 AM
+0 6 * * 1 cd /private/var/www/mi_crm && /private/var/www/mi_crm/venv/bin/python manage.py promote_quoted_funnel >> /private/var/www/mi_crm/logs/promote_quoted_funnel.log 2>&1
+```
+
+Make sure the log directory exists:
+
+```bash
+mkdir -p /private/var/www/mi_crm/logs
+```
+
+#### 3. Verify it's scheduled
+
+```bash
+crontab -l | grep promote_quoted_funnel                                  # confirm the entry is present
+tail -n 20 /private/var/www/mi_crm/logs/promote_quoted_funnel.log        # check the last run's output
+```
+
+> **First deploy of this schedule:** run it once by hand so the existing backlog of stale quotes is filed immediately rather than waiting for the first Monday tick.
 
 ---
 
@@ -205,3 +303,4 @@ If you want any of these, they're small, contained changes — tell me which and
 - **Visibility:** `visible_funnel_entries(user)` in `sales_funnel/views.py`.
 - **Won-deal reporting:** `sales_monitoring/views.py` (quota/achievement/executive dashboard) and `core/views.py` (home), all filtering `deal_outcome='won'` by `closed_date`.
 - **Threshold:** ₱500,000 separates Green (project) from Blue (services).
+- **Scheduled quote cleanup:** `sales_funnel/management/commands/promote_quoted_funnel.py` — stale `quoted` → Green/Blue on a weekly cron (see [§4a](#4a-scheduled-maintenance--promote-stale-quoted-entries-cron)).

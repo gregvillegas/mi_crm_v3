@@ -3,8 +3,21 @@
 {% block content %}
 <div class="container">
   <div class="d-flex justify-content-between align-items-center mb-4">
-    <h2>Approvals Inbox</h2>
+    <h2>Approvals Inbox{% if is_overview %} <small class="text-muted fs-5">(Overview)</small>{% endif %}</h2>
+    {% if is_overview %}
+    <a href="{% url 'approval_history' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="fas fa-history me-1"></i> Approval History
+    </a>
+    {% endif %}
   </div>
+
+  {% if is_overview %}
+  <div class="alert alert-info small mb-3">
+    <i class="fas fa-info-circle me-1"></i>
+    Showing all pending approvals across the company. You can only act on steps assigned to you.
+  </div>
+  {% endif %}
+
   <div class="card">
     <div class="table-responsive">
       <table class="table table-hover mb-0">
@@ -13,6 +26,7 @@
             <th>Proposal</th>
             <th>Customer</th>
             <th>Level</th>
+            {% if is_overview %}<th>Assigned Approver</th>{% endif %}
             <th>Total (PHP)</th>
             <th>Actions</th>
           </tr>
@@ -22,15 +36,29 @@
           <tr>
             <td><a href="{% url 'proposal_detail' step.proposal.pk %}">{{ step.proposal.proposal_number }}</a></td>
             <td>{{ step.proposal.customer.company_name }}</td>
-            <td>{{ step.level }}</td>
+            <td><span class="badge bg-secondary">Level {{ step.level }}</span></td>
+            {% if is_overview %}
+            <td>
+              {% if step.approver %}
+                {{ step.approver.get_full_name|default:step.approver.username }}
+                <span class="text-muted small">({{ step.approver.get_role_display }})</span>
+              {% else %}
+                <span class="text-muted">Unassigned</span>
+              {% endif %}
+            </td>
+            {% endif %}
             <td>&#8369;{{ step.proposal.approval_total_php|floatformat:2|intcomma }}</td>
             <td>
-              <a href="{% url 'approve_proposal' step.proposal.pk %}" class="btn btn-sm btn-success">Approve</a>
-              <a href="{% url 'reject_proposal' step.proposal.pk %}" class="btn btn-sm btn-outline-danger">Reject</a>
+              {% if is_overview and step.approver != request.user %}
+                <a href="{% url 'proposal_detail' step.proposal.pk %}" class="btn btn-sm btn-outline-primary">View</a>
+              {% else %}
+                <a href="{% url 'approve_proposal' step.proposal.pk %}" class="btn btn-sm btn-success">Approve</a>
+                <a href="{% url 'reject_proposal' step.proposal.pk %}" class="btn btn-sm btn-outline-danger">Reject</a>
+              {% endif %}
             </td>
           </tr>
           {% empty %}
-          <tr><td colspan="5" class="text-center py-4">No pending approvals</td></tr>
+          <tr><td colspan="{% if is_overview %}6{% else %}5{% endif %}" class="text-center py-4">No pending approvals</td></tr>
           {% endfor %}
         </tbody>
       </table>

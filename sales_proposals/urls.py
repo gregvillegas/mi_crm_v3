@@ -22,6 +22,7 @@ urlpatterns = [
     path('<int:pk>/pdf/', views.proposal_pdf, name='proposal_pdf'),
     path('<int:pk>/email/', views.proposal_email, name='proposal_email'),
     path('approvals/inbox/', views.approvals_inbox, name='approvals_inbox'),
+    path('approvals/history/', views.approval_history, name='approval_history'),
     path('<int:pk>/approve/', views.approve_proposal, name='approve_proposal'),
     path('<int:pk>/reject/', views.reject_proposal, name='reject_proposal'),
 ]

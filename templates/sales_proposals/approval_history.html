@@ -1,0 +1,106 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block content %}
+<div class="container">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>Approval History</h2>
+    <a href="{% url 'approvals_inbox' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="fas fa-inbox me-1"></i> Approvals Inbox
+    </a>
+  </div>
+
+  <!-- Filters -->
+  <div class="card mb-3">
+    <div class="card-body py-3">
+      <form method="get" class="row g-2 align-items-end">
+        <div class="col-md-3">
+          <label class="form-label small text-muted mb-1">Status</label>
+          <select name="status" class="form-select form-select-sm">
+            <option value="">All Statuses</option>
+            <option value="pending" {% if status_filter == 'pending' %}selected{% endif %}>Pending</option>
+            <option value="approved" {% if status_filter == 'approved' %}selected{% endif %}>Approved</option>
+            <option value="rejected" {% if status_filter == 'rejected' %}selected{% endif %}>Rejected</option>
+            <option value="cancelled" {% if status_filter == 'cancelled' %}selected{% endif %}>Cancelled</option>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small text-muted mb-1">Proposal (no. or subject)</label>
+          <input type="text" name="proposal" class="form-control form-control-sm" value="{{ proposal_filter }}" placeholder="e.g. PROP-2026-001">
+        </div>
+        <div class="col-md-2">
+          <button type="submit" class="btn btn-primary btn-sm w-100">Filter</button>
+        </div>
+        <div class="col-md-2">
+          <a href="{% url 'approval_history' %}" class="btn btn-outline-secondary btn-sm w-100">Clear</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0 align-middle">
+        <thead>
+          <tr>
+            <th>Proposal</th>
+            <th>Customer</th>
+            <th>Level</th>
+            <th>Approver</th>
+            <th>Status</th>
+            <th>Decided At</th>
+            <th>Comment</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for step in steps %}
+          <tr>
+            <td>
+              <a href="{% url 'proposal_detail' step.proposal.pk %}">{{ step.proposal.proposal_number }}</a>
+              <div class="small text-muted">{{ step.proposal.subject|truncatechars:40 }}</div>
+            </td>
+            <td>{{ step.proposal.customer.company_name }}</td>
+            <td><span class="badge bg-secondary">L{{ step.level }}</span></td>
+            <td>
+              {% if step.approver %}
+                {{ step.approver.get_full_name|default:step.approver.username }}
+                <div class="small text-muted">{{ step.approver.get_role_display }}</div>
+              {% else %}
+                <span class="text-muted">Unassigned</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if step.status == 'approved' %}
+                <span class="badge bg-success">Approved</span>
+              {% elif step.status == 'rejected' %}
+                <span class="badge bg-danger">Rejected</span>
+              {% elif step.status == 'cancelled' %}
+                <span class="badge bg-secondary">Cancelled</span>
+              {% else %}
+                <span class="badge bg-warning text-dark">Pending</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if step.decided_at %}
+                {{ step.decided_at|date:"M d, Y H:i" }}
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+              <div class="small text-muted">{{ step.created_at|date:"M d, Y H:i" }}</div>
+            </td>
+            <td class="small">
+              {% if step.comment %}
+                <span title="{{ step.comment }}">{{ step.comment|truncatechars:50 }}</span>
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="7" class="text-center py-4 text-muted">No approval records found.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

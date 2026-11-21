@@ -269,6 +269,91 @@ class ProposalApprovalWorkflowTests(TestCase):
         self.assertEqual(self.proposal.approval_status, 'in_progress')
 
 
+class ExecutiveApprovalOverviewTests(TestCase):
+    """Admin/executives can see all pending approvals and the approval history."""
+
+    def setUp(self):
+        self.password = 'testpass123'
+        self.salesperson = User.objects.create_user(
+            username='exec_ae', password=self.password, role='salesperson',
+        )
+        self.supervisor = User.objects.create_user(
+            username='exec_sup', password=self.password, role='supervisor',
+        )
+        self.admin = User.objects.create_user(
+            username='exec_admin', password=self.password, role='admin',
+        )
+        self.avp = User.objects.create_user(
+            username='exec_avp', password=self.password, role='avp',
+        )
+        self.team = Team.objects.create(name='Exec Team', avp=self.avp)
+        self.group = Group.objects.create(name='Exec Group', team=self.team, supervisor=self.supervisor)
+        TeamMembership.objects.create(user=self.salesperson, group=self.group)
+        self.customer = Customer.objects.create(
+            company_name='Exec Corp', contact_person_name='X', email='x@exec.test',
+            salesperson=self.salesperson,
+        )
+        self.proposal = Proposal.objects.create(
+            customer=self.customer, created_by=self.salesperson, subject='Exec Proposal',
+            approval_required=True, approval_status='in_progress',
+            approval_total_php=Decimal('1500000.00'),
+        )
+        # Two-level chain: supervisor (level 1) -> avp (level 2)
+        ProposalApprovalStep.objects.create(
+            proposal=self.proposal, level=1, approver=self.supervisor, status='pending',
+        )
+        ProposalApprovalStep.objects.create(
+            proposal=self.proposal, level=2, approver=self.avp, status='pending',
+        )
+
+    def test_executive_sees_all_pending_approvals(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse('approvals_inbox'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.proposal.proposal_number)
+        # Overview flag is set for executives
+        self.assertTrue(response.context['is_overview'])
+
+    def test_regular_user_sees_only_own_pending_steps(self):
+        # Salesperson is not an executive and not an approver -> sees nothing
+        self.client.force_login(self.salesperson)
+        response = self.client.get(reverse('approvals_inbox'))
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, self.proposal.proposal_number)
+        self.assertFalse(response.context['is_overview'])
+
+        # Supervisor is the level-1 approver (not an executive) -> sees only their step
+        self.client.force_login(self.supervisor)
+        response = self.client.get(reverse('approvals_inbox'))
+        self.assertContains(response, self.proposal.proposal_number)
+        self.assertFalse(response.context['is_overview'])
+
+    def test_approval_history_accessible_to_executives(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse('approval_history'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.proposal.proposal_number)
+        # Pending step badge appears
+        self.assertContains(response, 'Pending')
+
+    def test_approval_history_blocked_for_non_executives(self):
+        self.client.force_login(self.supervisor)
+        response = self.client.get(reverse('approval_history'))
+        self.assertRedirects(response, reverse('approvals_inbox'))
+
+    def test_approval_history_status_filter(self):
+        # Approve level 1 so we have one approved step
+        self.client.force_login(self.supervisor)
+        self.client.post(reverse('approve_proposal', args=[self.proposal.pk]), {'comment': 'ok'})
+
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse('approval_history'), {'status': 'approved'})
+        self.assertContains(response, 'Approved')
+        response_pending = self.client.get(reverse('approval_history'), {'status': 'pending'})
+        # Level 2 is still pending
+        self.assertContains(response_pending, self.proposal.proposal_number)
+
+
 class ProposalPricingWorkflowTests(TestCase):
     def test_item_form_allows_manual_unit_price_without_cost(self):
         form = ProposalItemForm(data={

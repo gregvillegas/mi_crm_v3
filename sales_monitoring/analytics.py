@@ -219,11 +219,18 @@ def coverage_section(user_ids, fiscal_year: int, period: dict) -> dict:
         })
     teams.sort(key=lambda t: (t['coverage'] is None, -(t['coverage'] or 0)))
 
+    team_pipeline_total = sum((team['pipeline'] for team in teams), ZERO)
+    team_deal_count = sum(team['deal_count'] for team in teams)
+    outside_team = outside_team_pipeline_section(user_ids)
+
     coverage = _ratio(pipeline_total, targets['period_target'])
     coverage_annual = _ratio(pipeline_total, targets['annual'])
     return {
         'pipeline': pipeline_total,
         'deal_count': pipeline_count,
+        'team_pipeline_total': team_pipeline_total,
+        'team_deal_count': team_deal_count,
+        'outside_team': outside_team,
         'targets': targets,
         'coverage': coverage,
         'coverage_display': _ratio_display(coverage),
@@ -234,6 +241,54 @@ def coverage_section(user_ids, fiscal_year: int, period: dict) -> dict:
         'target_low': COVERAGE_TARGET_LOW,
         'target_high': COVERAGE_TARGET_HIGH,
         'teams': teams,
+    }
+
+
+def outside_team_pipeline_section(user_ids) -> dict:
+    """Open deals owned by people not represented in any team membership row."""
+    from sales_funnel.models import SalesFunnel
+
+    queryset = SalesFunnel.objects.filter(
+        is_active=True,
+        is_test=False,
+        deal_outcome='active',
+    ).exclude(
+        salesperson_id__in=TeamMembership.objects.values_list('user_id', flat=True)
+    )
+    queryset = _scoped(queryset, user_ids)
+
+    role_labels = {
+        'supervisor': 'Supervisor',
+        'sm': 'Sales Manager (SM)',
+        'asm': 'Sales Manager / ASM',
+        'avp': 'AVP',
+        'admin': 'Admin',
+        'gm': 'GM',
+        'vp': 'VP',
+        'president': 'President',
+        'technical_sales': 'Technical Sales',
+        'techmgr': 'Technical Manager',
+        'asst_techmgr': 'Assistant Technical Manager',
+        'salesperson': 'Unassigned salesperson',
+    }
+    grouped = list(
+        queryset.values('salesperson__role')
+        .annotate(pipeline=Sum('retail'), deal_count=Count('id'))
+        .order_by('-pipeline', 'salesperson__role')
+    )
+    rows = [{
+        'role': role_labels.get(
+            item['salesperson__role'],
+            (item['salesperson__role'] or 'Unknown').replace('_', ' ').title(),
+        ),
+        'pipeline': item['pipeline'] or ZERO,
+        'deal_count': item['deal_count'],
+    } for item in grouped]
+
+    return {
+        'pipeline': sum((row['pipeline'] for row in rows), ZERO),
+        'deal_count': sum(row['deal_count'] for row in rows),
+        'rows': rows,
     }
 
 
@@ -667,7 +722,7 @@ def build_pipeline_intelligence(user, fiscal_year=None, quarter=None) -> dict:
     if user_ids is None:
         scope_label = 'Company-wide'
     else:
-        scope_label = f'{len(user_ids)} salespeople in scope'
+        scope_label = f'{len(user_ids)} owners in scope'
 
     stalled_qs = stalled_queryset(user_ids, today)
     return {

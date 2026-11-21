@@ -3,11 +3,13 @@ from decimal import Decimal
 
 from django.core.management.base import BaseCommand
 from django.db.models import Max, Sum
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from customers.models import Customer, CustomerHistory
 from sales_funnel.models import SalesFunnel
 from sales_monitoring.models import SalesActivity
+from sales_proposals.models import ProposalEmailLog
 
 
 class Command(BaseCommand):
@@ -25,6 +27,7 @@ class Command(BaseCommand):
         customer_id = options.get('customer_id')
         now = timezone.now()
         inactivity_cutoff = now - timedelta(days=90)
+        inactivity_cutoff_date = timezone.localdate(inactivity_cutoff)
         millionaire_threshold = Decimal('1000000.00')
 
         customers = Customer.objects.select_related('salesperson').all()
@@ -39,17 +42,29 @@ class Command(BaseCommand):
         activity_map = {
             row['customer_id']: row['last_activity_at']
             for row in SalesActivity.objects.filter(customer_id__in=customer_ids)
+            .filter(status='completed')
             .values('customer_id')
-            .annotate(last_activity_at=Max('created_at'))
+            .annotate(last_activity_at=Max(Coalesce('actual_end', 'created_at')))
         }
-        assignment_map = {
-            row['customer_id']: row['last_assignment_at']
-            for row in CustomerHistory.objects.filter(
+        proposal_sent_map = {
+            row['proposal__customer_id']: row['last_sent_at']
+            for row in ProposalEmailLog.objects.filter(
+                proposal__customer_id__in=customer_ids,
+                status='sent',
+            )
+            .values('proposal__customer_id')
+            .annotate(last_sent_at=Max('sent_at'))
+        }
+        closed_deal_map = {
+            row['customer_id']: row['last_closed_date']
+            for row in SalesFunnel.objects.filter(
                 customer_id__in=customer_ids,
-                action__in=['salesperson_assigned', 'salesperson_changed'],
+                is_test=False,
+                deal_outcome__in=['won', 'lost'],
+                closed_date__isnull=False,
             )
             .values('customer_id')
-            .annotate(last_assignment_at=Max('timestamp'))
+            .annotate(last_closed_date=Max('closed_date'))
         }
         won_revenue_map = {
             row['customer_id']: row['total_revenue'] or Decimal('0.00')
@@ -67,9 +82,21 @@ class Command(BaseCommand):
         for customer in customers:
             synced += 1
             last_activity_at = activity_map.get(customer.id)
-            last_assignment_at = assignment_map.get(customer.id)
-            reference_dt = last_activity_at or last_assignment_at or customer.created_at
-            auto_inactive_flag = bool(reference_dt and reference_dt <= inactivity_cutoff)
+            last_proposal_sent_at = proposal_sent_map.get(customer.id)
+            last_closed_date = closed_deal_map.get(customer.id)
+            engagement_dates = [
+                timezone.localdate(value)
+                for value in (last_activity_at, last_proposal_sent_at)
+                if value is not None
+            ]
+            if last_closed_date:
+                engagement_dates.append(last_closed_date)
+            reference_date = (
+                max(engagement_dates)
+                if engagement_dates
+                else timezone.localdate(customer.created_at)
+            )
+            auto_inactive_flag = reference_date <= inactivity_cutoff_date
             lifetime_won_revenue = won_revenue_map.get(customer.id, Decimal('0.00'))
             is_millionaire_account = lifetime_won_revenue > millionaire_threshold
 
@@ -109,6 +136,7 @@ class Command(BaseCommand):
                         f"auto_inactive={customer.auto_inactive_flag}, "
                         f"millionaire={customer.is_millionaire_account}, "
                         f"won_revenue={customer.lifetime_won_revenue}, "
+                        f"last_engagement={reference_date}, "
                         f"last_activity={customer.last_sales_activity_at or 'None'}"
                     )
                 else:
@@ -121,7 +149,7 @@ class Command(BaseCommand):
                             description=(
                                 f"System sync updated auto inactive flag to "
                                 f"{'Inactive' if auto_inactive_flag else 'Active'} "
-                                f"using reference date {(reference_dt.strftime('%Y-%m-%d') if reference_dt else 'N/A')}."
+                                f"using latest qualifying engagement date {reference_date}."
                             ),
                             changed_by=None,
                             salesperson_at_time=customer.salesperson,

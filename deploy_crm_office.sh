@@ -18,7 +18,6 @@ set -euo pipefail
 # ------------------------------------------------------------------ config ---
 REMOTE_SVR="crm_office"
 REMOTE_DIR="/var/www/mi_crm"
-#LOCAL_DIR="/private/var/www/mi_crm/"
 LOCAL_DIR="/Users/greg/Documents/mi_crm_v2/"
 SSH_KEY="$HOME/.ssh/id_rsa"
 SSH="ssh -i $SSH_KEY"

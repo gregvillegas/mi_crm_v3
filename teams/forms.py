@@ -84,17 +84,21 @@ class GroupForm(forms.ModelForm):
         )
 
 class GroupEditForm(forms.ModelForm):
-    # Multi-select field for adding/removing members
+    # Multi-select field for adding/removing members.
+    # The queryset is overridden in __init__ based on the group type:
+    #   - regular groups  -> salesperson users
+    #   - tsg groups      -> technical_sales users
+    # This keeps Technical Sales users out of regular sales groups and vice versa.
     members = forms.ModelMultipleChoiceField(
         queryset=User.objects.filter(role='salesperson'),
         widget=forms.CheckboxSelectMultiple,
         required=False,
-        help_text='Select salesperson users to add to this group. Users can only be in one group at a time.'
+        help_text='Select members to add to this group. Users can only be in one group at a time.'
     )
     
     class Meta:
         model = Group
-        fields = ['name', 'team', 'supervisor', 'teamlead', 'sm_managers', 'members']
+        fields = ['name', 'team', 'covered_team', 'supervisor', 'teamlead', 'sm_managers', 'members']
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -110,28 +114,50 @@ class GroupEditForm(forms.ModelForm):
         self.fields['sm_managers'].queryset = User.objects.filter(role__in=['sm', 'asm'], is_active=True).order_by('first_name', 'last_name')
         self.fields['sm_managers'].required = False
         self.fields['sm_managers'].help_text = 'Assign one or more Sales Managers (SM/ASM) to oversee this group. Managers will only see the groups assigned here.'
-        
-        # Filter available salespeople (exclude those already in other groups)
+
+        # Decide which role is eligible for membership based on the group type.
+        # TSG groups hold Technical Sales staff; regular groups hold Account Managers.
+        is_tsg = getattr(self.instance, 'group_type', 'regular') == 'tsg'
+        member_role = 'technical_sales' if is_tsg else 'salesperson'
+        role_label = 'Technical Sales' if is_tsg else 'salesperson'
+
+        # covered_team is only meaningful for TSG groups. For regular groups it
+        # is hidden because Group.team already defines which team they belong to.
+        if is_tsg:
+            self.fields['covered_team'].required = False
+            self.fields['covered_team'].help_text = (
+                'The sales team whose customers this TSG group handles. '
+                'E.g. TSG A covers Team A. Leave blank to use the team above.'
+            )
+        else:
+            self.fields.pop('covered_team', None)
+
+        # Filter available members (exclude those already in other groups)
         if self.instance.pk:
-            # For existing groups, include current members and unassigned salespeople
+            # For existing groups, include current members and unassigned users of the eligible role
             current_member_ids = list(User.objects.filter(team_membership__group=self.instance).values_list('pk', flat=True))
             unassigned_ids = list(User.objects.filter(
-                role='salesperson', 
+                role=member_role,
                 team_membership__isnull=True
             ).values_list('pk', flat=True))
             
             # Combine the IDs and create a single queryset
             available_ids = current_member_ids + unassigned_ids
-            self.fields['members'].queryset = User.objects.filter(pk__in=available_ids)
+            self.fields['members'].queryset = User.objects.filter(pk__in=available_ids).order_by('first_name', 'last_name')
             
             # Set initial selection to current members
             self.fields['members'].initial = current_member_ids
         else:
-            # For new groups, only show unassigned salespeople
+            # For new groups, only show unassigned users of the eligible role
             self.fields['members'].queryset = User.objects.filter(
-                role='salesperson', 
+                role=member_role,
                 team_membership__isnull=True
-            )
+            ).order_by('first_name', 'last_name')
+
+        self.fields['members'].help_text = (
+            f'Select {role_label} users to add to this group. '
+            'Users can only be in one group at a time.'
+        )
         
         self.helper = FormHelper()
         self.helper.layout = Layout(
@@ -140,6 +166,7 @@ class GroupEditForm(forms.ModelForm):
                 Column('name', css_class='form-group col-md-6 mb-3'),
                 Column('team', css_class='form-group col-md-6 mb-3'),
             ),
+            Field('covered_team'),
             Row(
                 Column('supervisor', css_class='form-group col-md-6 mb-3'),
                 Column('teamlead', css_class='form-group col-md-6 mb-3'),

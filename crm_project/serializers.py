@@ -677,16 +677,13 @@ class SalesActivityCreateSerializer(serializers.ModelSerializer):
         validated_data.pop('salesperson', None)
         activity = SalesActivity.objects.create(salesperson=salesperson, **validated_data)
 
-        if activity.customer and (not activity.customer.is_active or activity.customer.auto_inactive_flag):
-            reactivated_fields = []
-            if not activity.customer.is_active:
-                activity.customer.is_active = True
-                reactivated_fields.append('is_active')
-            if activity.customer.auto_inactive_flag:
-                activity.customer.auto_inactive_flag = False
-                reactivated_fields.append('auto_inactive_flag')
-            if reactivated_fields:
-                activity.customer.save(update_fields=reactivated_fields)
+        if activity.customer and activity.status == 'completed':
+            from customers.status import clear_auto_inactive_for_engagement
+            clear_auto_inactive_for_engagement(
+                activity.customer,
+                source='a completed sales activity',
+                changed_by=request.user,
+            )
 
         ActivityLog.log_activity_change(
             activity=activity,
@@ -747,6 +744,15 @@ class SalesActivityUpdateSerializer(serializers.ModelSerializer):
             if getattr(instance, field) != value
         ]
         activity = super().update(instance, validated_data)
+
+        if activity.customer and activity.status == 'completed':
+            from customers.status import clear_auto_inactive_for_engagement
+            request = self.context.get('request')
+            clear_auto_inactive_for_engagement(
+                activity.customer,
+                source='a completed sales activity',
+                changed_by=request.user if request else None,
+            )
 
         if changed:
             request = self.context.get('request')

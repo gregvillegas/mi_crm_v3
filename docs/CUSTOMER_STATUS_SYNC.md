@@ -12,26 +12,29 @@ marked inactive** — and how to schedule the job on the server.
 
 ## 1. What the rule is
 
-A customer is flagged **auto-inactive** when their most recent *reference date*
-is **older than 90 days** (3 months). This sets `Customer.auto_inactive_flag =
+A customer is flagged **auto-inactive** when the latest qualifying customer
+engagement is at least 90 days old. This sets `Customer.auto_inactive_flag =
 True`; the customer is then treated as inactive across the app
 (`is_effectively_active = is_active AND NOT auto_inactive_flag`).
 
-The **reference date** is the newest of, in order of preference:
-1. the customer's last **sales activity** creation date, else
-2. the last time the customer was **assigned / reassigned** a salesperson
-   (from `CustomerHistory`), else
-3. the customer's **created** date.
+Qualifying engagement is limited to:
+1. A customer-linked sales activity with `status='completed'`, dated by
+   `actual_end` (legacy completed activities without it fall back to `created_at`).
+2. A successfully sent proposal (`ProposalEmailLog.status='sent'`), dated by
+   `sent_at`. Drafts and failed sends do not count.
+3. A closed Won or Lost sales-funnel deal with a `closed_date`. Test funnel
+   entries do not count.
 
-So a brand-new customer with no activity yet is judged from when they were
-created or assigned — they aren't flagged inactive on day one, only once 90 days
-pass with nothing happening.
+Planned, in-progress, cancelled, and postponed activities do not count.
+Assigning or reassigning a salesperson is an internal change, not customer
+engagement, and does not reset the clock. If no qualifying engagement exists,
+the customer's creation date provides a 90-day initial grace period.
 
 The 90-day window is defined in the command as:
 
 ```python
-inactivity_cutoff = now - timedelta(days=90)
-auto_inactive_flag = bool(reference_dt and reference_dt <= inactivity_cutoff)
+inactivity_cutoff_date = timezone.localdate(timezone.now() - timedelta(days=90))
+auto_inactive_flag = latest_engagement_date <= inactivity_cutoff_date
 ```
 
 > To change the period (e.g. 60 or 120 days), edit `timedelta(days=90)` in
@@ -43,8 +46,8 @@ The one command keeps four system-managed fields in sync (all on `Customer`):
 
 | Field | Meaning | Rule |
 |---|---|---|
-| `last_sales_activity_at` | Newest sales-activity date | Max `SalesActivity.created_at` for the customer |
-| `auto_inactive_flag` | Inactive by inactivity | reference date ≤ now − 90 days |
+| `last_sales_activity_at` | Newest completed sales-activity timestamp | Max qualifying `SalesActivity.actual_end` (legacy fallback: `created_at`) |
+| `auto_inactive_flag` | Inactive by inactivity | latest qualifying engagement date ≤ local date 90 days ago |
 | `lifetime_won_revenue` | Cumulative won SRP | Sum of `retail` on won funnel entries |
 | `is_millionaire_account` | "Millionaire" badge | lifetime won revenue > ₱1,000,000 |
 
@@ -55,16 +58,13 @@ account.
 
 ## 3. How a customer gets re-activated
 
-Reactivation is **automatic and immediate** — it does *not* wait for this job.
-When a sales activity is logged for a customer that is inactive or auto-inactive,
-the app clears the flags right away:
+Qualifying engagement clears `auto_inactive_flag` immediately and is also
+recomputed by the scheduled sync. This applies when a sales activity is completed,
+a proposal is successfully sent, or a deal is marked Won/Lost. Planned activities
+do not reactivate customers.
 
-- Web: `sales_monitoring/views.py` (on activity create/complete).
-- Mobile API: `crm_project/serializers.py` (on activity create).
-
-Both set `is_active=True` and `auto_inactive_flag=False` the moment an activity
-is recorded. The next scheduled sync then recomputes everything consistently
-from the data.
+Automatic reactivation does **not** set `is_active=True`; a deliberate manual
+deactivation remains in effect. The manual and automatic flags stay independent.
 
 ## 4. Running the command
 

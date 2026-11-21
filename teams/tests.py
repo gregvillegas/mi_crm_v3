@@ -9,11 +9,13 @@ from customers.permissions import visible_customers_queryset
 from sales_funnel.models import SalesFunnel
 from sales_proposals.models import Proposal, ProposalItem
 from sales_proposals.views import update_sales_funnel, visible_proposals_queryset
+from teams.forms import GroupEditForm
 from teams.models import (
     Group,
     RoleMonthlyQuota,
     Team,
     TeamMembership,
+    TeamMembershipQuotaLog,
     tech_manager_team_ids,
     technical_sales_team_ids,
     technical_sales_users_for_teams,
@@ -386,3 +388,352 @@ class QuotaManagementExecutiveAccessTests(TestCase):
         response = self.client.get(reverse('quota_management'))
 
         self.assertEqual(response.status_code, 403)
+
+
+class TeamMembershipQuotaLogTests(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.supervisor = User.objects.create_user(
+            username='log_supervisor', password='pass', role='supervisor'
+        )
+        self.team = Team.objects.create(name='Log Team', avp=self.supervisor)
+        self.group = Group.objects.create(
+            name='Log Group',
+            team=self.team,
+            group_type='regular',
+            supervisor=self.supervisor,
+        )
+        self.salesperson = User.objects.create_user(
+            username='log_salesperson', password='pass', role='salesperson'
+        )
+        self.membership = TeamMembership.objects.create(
+            user=self.salesperson,
+            group=self.group,
+            quota=Decimal('100000.00'),
+        )
+        self.editor = User.objects.create_user(
+            username='log_editor_gm', password='pass', role='gm'
+        )
+
+    def _post(self, quota_value):
+        return self.client.post(
+            reverse('update_member_quota', args=[self.membership.pk]),
+            {'quota': quota_value},
+        )
+
+    def test_increase_is_logged(self):
+        self.client.force_login(self.editor)
+
+        response = self._post('150000.00')
+
+        self.assertRedirects(response, reverse('quota_management'))
+        log = TeamMembershipQuotaLog.objects.get(team_membership=self.membership)
+        self.assertEqual(log.previous_quota, Decimal('100000.00'))
+        self.assertEqual(log.new_quota, Decimal('150000.00'))
+        self.assertEqual(log.change_type, 'increase')
+        self.assertEqual(log.changed_by, self.editor)
+
+    def test_decrease_is_logged(self):
+        self.client.force_login(self.editor)
+
+        self._post('75000.00')
+
+        log = TeamMembershipQuotaLog.objects.get(team_membership=self.membership)
+        self.assertEqual(log.change_type, 'decrease')
+        self.assertEqual(log.new_quota, Decimal('75000.00'))
+
+    def test_no_change_is_logged_as_no_change(self):
+        self.client.force_login(self.editor)
+
+        self._post('100000.00')
+
+        log = TeamMembershipQuotaLog.objects.get(team_membership=self.membership)
+        self.assertEqual(log.change_type, 'no_change')
+        self.assertEqual(log.previous_quota, log.new_quota)
+
+    def test_multiple_changes_create_multiple_logs(self):
+        self.client.force_login(self.editor)
+
+        self._post('200000.00')
+        self._post('50000.00')
+
+        logs = list(TeamMembershipQuotaLog.objects.filter(
+            team_membership=self.membership
+        ).order_by('-changed_at'))
+        self.assertEqual(len(logs), 2)
+        # Most recent is the decrease to 50k
+        self.assertEqual(logs[0].change_type, 'decrease')
+        self.assertEqual(logs[0].previous_quota, Decimal('200000.00'))
+        self.assertEqual(logs[0].new_quota, Decimal('50000.00'))
+        # First was the increase to 200k
+        self.assertEqual(logs[1].change_type, 'increase')
+
+    def test_history_displayed_on_update_page(self):
+        TeamMembershipQuotaLog.objects.create(
+            team_membership=self.membership,
+            previous_quota=Decimal('100000.00'),
+            new_quota=Decimal('120000.00'),
+            change_type='increase',
+            changed_by=self.editor,
+        )
+        self.client.force_login(self.editor)
+
+        response = self.client.get(
+            reverse('update_member_quota', args=[self.membership.pk])
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Quota Change History')
+        self.assertContains(response, 'Increase')
+        self.assertContains(response, '100,000.00')
+        self.assertContains(response, '120,000.00')
+
+
+class GroupEditFormMembershipTests(TestCase):
+    """Verify that group membership is role-segregated by group type:
+    regular groups list salespeople, TSG groups list technical_sales users."""
+
+    def setUp(self):
+        self.techmgr = User.objects.create_user(
+            username='tmgr_membership', password='pass', role='techmgr'
+        )
+        self.supervisor = User.objects.create_user(
+            username='sup_membership', password='pass', role='supervisor'
+        )
+        self.team = Team.objects.create(
+            name='TSG Team', tech_manager=self.techmgr,
+        )
+        self.regular_group = Group.objects.create(
+            name='Regular Group', team=self.team, group_type='regular',
+            supervisor=self.supervisor,
+        )
+        self.tsg_group = Group.objects.create(
+            name='TSG A', team=self.team, group_type='tsg',
+        )
+        self.salesperson = User.objects.create_user(
+            username='sp_member', password='pass', role='salesperson',
+            first_name='Sales', last_name='Person',
+        )
+        self.tech_sales = User.objects.create_user(
+            username='ts_member', password='pass', role='technical_sales',
+            first_name='Tech', last_name='Sales',
+        )
+
+    def test_regular_group_offers_salespeople_only(self):
+        form = GroupEditForm(instance=self.regular_group)
+        member_ids = set(form.fields['members'].queryset.values_list('pk', flat=True))
+
+        self.assertIn(self.salesperson.pk, member_ids)
+        self.assertNotIn(self.tech_sales.pk, member_ids)
+
+    def test_tsg_group_offers_technical_sales_only(self):
+        form = GroupEditForm(instance=self.tsg_group)
+        member_ids = set(form.fields['members'].queryset.values_list('pk', flat=True))
+
+        self.assertIn(self.tech_sales.pk, member_ids)
+        self.assertNotIn(self.salesperson.pk, member_ids)
+
+    def test_tsg_group_can_save_technical_sales_member(self):
+        form = GroupEditForm(
+            {
+                'name': self.tsg_group.name,
+                'team': self.team.pk,
+                'members': [self.tech_sales.pk],
+            },
+            instance=self.tsg_group,
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        form.save()
+
+        membership = TeamMembership.objects.get(user=self.tech_sales)
+        self.assertEqual(membership.group, self.tsg_group)
+
+    def test_regular_group_cannot_add_technical_sales_member(self):
+        # The form queryset excludes technical_sales, so passing one must fail
+        # validation rather than silently creating a cross-role membership.
+        form = GroupEditForm(
+            {
+                'name': self.regular_group.name,
+                'team': self.team.pk,
+                'members': [self.tech_sales.pk],
+            },
+            instance=self.regular_group,
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn('members', form.errors)
+        self.assertFalse(
+            TeamMembership.objects.filter(user=self.tech_sales).exists()
+        )
+
+    def test_current_tsg_member_remains_selectable(self):
+        TeamMembership.objects.create(user=self.tech_sales, group=self.tsg_group)
+
+        form = GroupEditForm(instance=self.tsg_group)
+        member_ids = set(form.fields['members'].queryset.values_list('pk', flat=True))
+
+        self.assertIn(self.tech_sales.pk, member_ids)
+        self.assertEqual(
+            set(form.fields['members'].initial), {self.tech_sales.pk}
+        )
+
+
+class QuotaManagementPageMembershipTests(TestCase):
+    """Technical Sales members of TSG groups must appear on the Quota
+    Management page so they can be assigned a quota."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username='qmgmt_admin', password='pass', role='admin'
+        )
+        self.techmgr = User.objects.create_user(
+            username='qmgmt_tm', password='pass', role='techmgr'
+        )
+        self.team = Team.objects.create(name='QMGMT TSG', tech_manager=self.techmgr)
+        self.tsg_group = Group.objects.create(
+            name='QMGMT TSG A', team=self.team, group_type='tsg',
+        )
+        self.tech_sales = User.objects.create_user(
+            username='qmgmt_ts', password='pass', role='technical_sales',
+            first_name='TS', last_name='Rep',
+        )
+        TeamMembership.objects.create(
+            user=self.tech_sales, group=self.tsg_group, quota=Decimal('150000.00'),
+        )
+
+    def test_tsg_member_appears_on_quota_management_page(self):
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse('quota_management'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'TS Rep')
+        self.assertContains(response, '150,000.00')
+        self.assertContains(response, 'Technical Sales Quotas')
+
+
+class TechnicalSalesTSGGroupCoverageTests(TestCase):
+    """A Technical Sales user added as a member of a TSG group must cover that
+    group's team's customers without also being ticked on the Team edit form."""
+
+    def setUp(self):
+        password = 'testpass123'
+        self.avp = User.objects.create_user(
+            username='tsgcov_avp', password=password, role='avp',
+        )
+        self.techmgr_a = User.objects.create_user(
+            username='tsgcov_tm_a', password=password, role='techmgr',
+        )
+        self.techmgr_b = User.objects.create_user(
+            username='tsgcov_tm_b', password=password, role='techmgr',
+        )
+        self.supervisor_a = User.objects.create_user(
+            username='tsgcov_sup_a', password=password, role='supervisor',
+        )
+        self.supervisor_b = User.objects.create_user(
+            username='tsgcov_sup_b', password=password, role='supervisor',
+        )
+
+        self.team_a = Team.objects.create(
+            name='TSG Cov Team A', avp=self.avp, tech_manager=self.techmgr_a,
+        )
+        self.team_b = Team.objects.create(
+            name='TSG Cov Team B', avp=self.avp, tech_manager=self.techmgr_b,
+        )
+        self.group_a = Group.objects.create(
+            name='TSG Cov Group A', team=self.team_a, supervisor=self.supervisor_a,
+        )
+        self.group_b = Group.objects.create(
+            name='TSG Cov Group B', team=self.team_b, supervisor=self.supervisor_b,
+        )
+        self.tsg_a = Group.objects.create(
+            name='TSG Cov A', team=self.team_a, group_type='tsg',
+        )
+        self.tsg_b = Group.objects.create(
+            name='TSG Cov B', team=self.team_b, group_type='tsg',
+        )
+
+        self.seller_a = User.objects.create_user(
+            username='tsgcov_seller_a', password=password, role='salesperson',
+        )
+        self.seller_b = User.objects.create_user(
+            username='tsgcov_seller_b', password=password, role='salesperson',
+        )
+        TeamMembership.objects.create(user=self.seller_a, group=self.group_a)
+        TeamMembership.objects.create(user=self.seller_b, group=self.group_b)
+
+        self.customer_a = Customer.objects.create(
+            company_name='TSG Cov Customer A', contact_person_name='Al',
+            email='al@tsgcov.test', salesperson=self.seller_a,
+        )
+        self.customer_b = Customer.objects.create(
+            company_name='TSG Cov Customer B', contact_person_name='Bea',
+            email='bea@tsgcov.test', salesperson=self.seller_b,
+        )
+
+        # Two active Technical Sales users so the singleton rule does not fire
+        # and coverage must come from the TSG membership.
+        self.ts_a = User.objects.create_user(
+            username='tsgcov_ts_a', password=password, role='technical_sales',
+        )
+        self.ts_b = User.objects.create_user(
+            username='tsgcov_ts_b', password=password, role='technical_sales',
+        )
+        self.ts_unassigned = User.objects.create_user(
+            username='tsgcov_ts_none', password=password, role='technical_sales',
+        )
+
+        TeamMembership.objects.create(user=self.ts_a, group=self.tsg_a)
+        TeamMembership.objects.create(user=self.ts_b, group=self.tsg_b)
+
+    def test_tsg_membership_grants_the_group_team(self):
+        self.assertEqual(technical_sales_team_ids(self.ts_a), {self.team_a.id})
+        self.assertEqual(technical_sales_team_ids(self.ts_b), {self.team_b.id})
+
+    def test_ts_without_tsg_membership_has_no_team(self):
+        self.assertEqual(technical_sales_team_ids(self.ts_unassigned), set())
+
+    def test_tsg_member_sees_their_team_customers_only(self):
+        visible = visible_customers_queryset(self.ts_a)
+        self.assertTrue(visible.filter(pk=self.customer_a.pk).exists())
+        self.assertFalse(visible.filter(pk=self.customer_b.pk).exists())
+
+    def test_ts_without_tsg_membership_sees_no_customers(self):
+        self.assertFalse(visible_customers_queryset(self.ts_unassigned).exists())
+
+    def test_technical_manager_sees_tsg_member_staff(self):
+        staff_ids = set(
+            technical_sales_users_for_teams(tech_manager_team_ids(self.techmgr_a))
+            .values_list('id', flat=True)
+        )
+        self.assertIn(self.ts_a.id, staff_ids)
+        self.assertNotIn(self.ts_b.id, staff_ids)
+
+    def test_team_form_m2m_still_grants_coverage(self):
+        # The documented Team.technical_sales path must keep working alongside
+        # the new TSG-membership path.
+        self.team_b.technical_sales.add(self.ts_unassigned)
+        self.assertEqual(
+            technical_sales_team_ids(self.ts_unassigned), {self.team_b.id}
+        )
+
+    def test_covered_team_redirects_coverage_when_tsg_has_own_team(self):
+        # Mirror the real setup: TSG groups live under a dedicated "TSG" team
+        # and declare which sales team they cover via Group.covered_team.
+        tsg_org_team = Team.objects.create(
+            name='TSG Org Team', avp=self.avp, tech_manager=self.techmgr_a,
+        )
+        tsg_a_in_org = Group.objects.create(
+            name='TSG A in Org Team', team=tsg_org_team, group_type='tsg',
+            covered_team=self.team_a,
+        )
+        # Use a fresh Technical Sales user (ts_a already has a membership).
+        ts_covered = User.objects.create_user(
+            username='tsgcov_ts_covered', password='testpass123', role='technical_sales',
+        )
+        TeamMembership.objects.create(user=ts_covered, group=tsg_a_in_org)
+
+        # ts_covered now belongs to the TSG org team group but must cover team_a.
+        self.assertEqual(technical_sales_team_ids(ts_covered), {self.team_a.id})
+        visible = visible_customers_queryset(ts_covered)
+        self.assertTrue(visible.filter(pk=self.customer_a.pk).exists())
+        self.assertFalse(visible.filter(pk=self.customer_b.pk).exists())

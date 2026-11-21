@@ -581,6 +581,36 @@ class PipelineIntelligenceTests(TestCase):
         # Open pipeline = 600k + 100k + 900k (won deal excluded).
         self.assertEqual(coverage['pipeline'], Decimal('1600000.00'))
 
+    def test_outside_team_owner_contributions_reconcile_with_company_total(self):
+        SalesFunnel.objects.create(
+            date_created=self.today,
+            company_name='Supervisor Deal',
+            requirement_description='Supervisor-owned pipeline',
+            cost=Decimal('200000.00'),
+            retail=Decimal('500000.00'),
+            stage='quoted',
+            salesperson=self.supervisor,
+        )
+
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse('sales_monitoring:pipeline_intelligence'))
+
+        coverage = response.context['coverage']
+        outside_team = coverage['outside_team']
+        self.assertEqual(outside_team['pipeline'], Decimal('500000.00'))
+        self.assertEqual(outside_team['deal_count'], 1)
+        self.assertEqual(outside_team['rows'][0]['role'], 'Supervisor')
+        self.assertEqual(
+            coverage['team_pipeline_total'] + outside_team['pipeline'],
+            coverage['pipeline'],
+        )
+        self.assertEqual(
+            coverage['team_deal_count'] + outside_team['deal_count'],
+            coverage['deal_count'],
+        )
+        self.assertContains(response, 'Pipeline Outside Team Rows')
+        self.assertContains(response, 'Matches open pipeline total')
+
     def test_avp_scope_excludes_other_teams(self):
         self.client.force_login(self.avp)
         response = self.client.get(reverse('sales_monitoring:pipeline_intelligence'))

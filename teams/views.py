@@ -2,7 +2,7 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.urls import reverse
 from django.utils import timezone
 from django.contrib.auth.decorators import login_required, user_passes_test
-from .models import Team, Group, TeamMembership, SupervisorCommitment, asm_scoped_groups
+from .models import Team, Group, TeamMembership, TeamMembershipQuotaLog, SupervisorCommitment, asm_scoped_groups
 from .forms import TeamForm, GroupForm, GroupEditForm, TeamMembershipQuotaForm, SupervisorCommitmentForm, PersonalContributionForm, AsmPersonalTargetForm, RoleMonthlyQuotaForm
 from users.models import User
 from django.contrib.auth.decorators import user_passes_test, login_required
@@ -205,9 +205,32 @@ def update_member_quota(request, pk):
             from django.http import Http404
             raise Http404("You don't have permission to edit members of this group.")
     if request.method == 'POST':
+        # Capture the persisted value BEFORE constructing the bound form.
+        # ModelForm.is_valid() mutates instance fields in-place, so reading
+        # membership.quota after validation would return the new value.
+        previous_quota = membership.quota or 0
         form = TeamMembershipQuotaForm(request.POST, instance=membership)
         if form.is_valid():
-            form.save()
+            instance = form.save()
+            new_quota = instance.quota or 0
+            # Always record an audit row so the timeline is complete; the
+            # change_type tells reports whether it actually moved.
+            try:
+                if new_quota > previous_quota:
+                    change_type = 'increase'
+                elif new_quota < previous_quota:
+                    change_type = 'decrease'
+                else:
+                    change_type = 'no_change'
+            except Exception:
+                change_type = 'no_change'
+            TeamMembershipQuotaLog.objects.create(
+                team_membership=membership,
+                previous_quota=previous_quota,
+                new_quota=new_quota,
+                change_type=change_type,
+                changed_by=request.user,
+            )
             if request.user.role in {'avp', 'admin', 'president', 'gm', 'vp'}:
                 return redirect('quota_management')
             return redirect('group_members', pk=group.pk)
@@ -218,6 +241,7 @@ def update_member_quota(request, pk):
         'form': form,
         'membership': membership,
         'group': group,
+        'logs': membership.quota_logs.all()[:20],
         'title': f'Update Quota - {membership.user.get_full_name() or membership.user.username}',
         'back_url': (
             reverse('quota_management')

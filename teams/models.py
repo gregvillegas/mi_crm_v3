@@ -70,6 +70,19 @@ class Group(models.Model):
     teamlead = models.ForeignKey(User, on_delete=models.SET_NULL, related_name='led_groups', 
                              blank=True, null=True, limit_choices_to={'role': 'teamlead'})
 
+    # For TSG groups: the team whose customers this group's Technical Sales
+    # staff handle. TSG groups live under a dedicated "TSG" team in the org
+    # chart, so Group.team alone cannot tell us which sales team's customers
+    # they cover. Leave blank to fall back to Group.team.
+    covered_team = models.ForeignKey(
+        Team,
+        on_delete=models.SET_NULL,
+        related_name='covering_tsg_groups',
+        blank=True,
+        null=True,
+        help_text='(TSG only) The sales team whose customers this group handles. E.g. TSG A covers Team A.',
+    )
+
     def __str__(self):
         if self.group_type == 'tsg':
             return f"{self.name} [TSG - {self.team.name}]"
@@ -127,6 +140,53 @@ class TeamMembership(models.Model):
 
     def __str__(self):
         return f"{self.user.username} in {self.group.name}"
+
+class TeamMembershipQuotaLog(models.Model):
+    """Audit trail of every change to a salesperson's monthly quota.
+
+    Mirrors the existing SupervisorCommitmentLog / CompanyAnnualTargetLog
+    pattern: append-only, records before/after amounts, who made the change
+    and when, plus an optional reason. The live ``TeamMembership.quota``
+    value stays the source of truth for reporting; this table is purely for
+    traceability when a quota is increased/decreased based on performance
+    or an agreement.
+    """
+    CHANGE_CHOICES = [
+        ('increase', 'Increase'),
+        ('decrease', 'Decrease'),
+        ('no_change', 'No Change'),
+    ]
+
+    team_membership = models.ForeignKey(
+        TeamMembership,
+        on_delete=models.CASCADE,
+        related_name='quota_logs',
+    )
+    previous_quota = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    new_quota = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    change_type = models.CharField(max_length=20, choices=CHANGE_CHOICES, default='no_change')
+    changed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='team_membership_quota_changes',
+    )
+    changed_at = models.DateTimeField(auto_now_add=True)
+    notes = models.TextField(blank=True, help_text="Reason for the change (e.g. performance, agreement).")
+
+    class Meta:
+        ordering = ['-changed_at']
+        indexes = [
+            models.Index(fields=['team_membership', '-changed_at']),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.team_membership.user.username} "
+            f"{self.change_type} "
+            f"₱{self.previous_quota} → ₱{self.new_quota}"
+        )
 
 class SupervisorCommitment(models.Model):
     group = models.ForeignKey(Group, on_delete=models.CASCADE, related_name='supervisor_commitments')
@@ -286,8 +346,12 @@ def technical_sales_team_ids(user):
          Technical Manager assigned (the single-Technical-Sales-person case).
       2. If this is the only active Technical Sales user -> every team in the
          CRM (the "only 1 Technical Sales is hired" case).
-      3. Otherwise -> the teams explicitly attached via ``Team.technical_sales``
-         (reverse accessor ``user.ts_teams``).
+      3. Otherwise -> the union of:
+           * teams explicitly attached via ``Team.technical_sales`` (reverse
+             accessor ``user.ts_teams``), and
+           * the team of any ``tsg`` Group the user is a member of — so adding a
+             Technical Salesperson to "TSG A" grants Team A's customers without
+             also having to tick them on the Team edit form.
 
     Returns a set of ints. Non-Technical-Sales roles return an empty set so a
     mis-scoped user falls back to "see nothing" rather than "see everything".
@@ -301,7 +365,17 @@ def technical_sales_team_ids(user):
         }
     if User.objects.filter(role='technical_sales', is_active=True).count() == 1:
         return {int(tid) for tid in Team.objects.values_list('id', flat=True)}
-    return {int(tid) for tid in user.ts_teams.values_list('id', flat=True)}
+
+    team_ids = {int(tid) for tid in user.ts_teams.values_list('id', flat=True)}
+    # Also grant coverage for the team of any TSG group the user belongs to.
+    # TSG groups sit under a dedicated "TSG" team in the org chart, so the
+    # sales team they actually cover is stored in Group.covered_team (with
+    # Group.team as a fallback if covered_team is not set).
+    for group in Group.objects.filter(group_type='tsg', members__user=user):
+        tid = group.covered_team_id or group.team_id
+        if tid:
+            team_ids.add(int(tid))
+    return team_ids
 
 
 def tech_manager_team_ids(user):
@@ -314,8 +388,9 @@ def tech_manager_team_ids(user):
 def technical_sales_users_for_teams(team_ids):
     """
     Technical Sales users who handle any of ``team_ids`` — either explicitly
-    attached to one of those teams, flagged to cover all technical teams, or
-    the single active Technical Sales user covering the whole CRM.
+    attached to one of those teams, a member of one of those teams' TSG groups,
+    flagged to cover all technical teams, or the single active Technical Sales
+    user covering the whole CRM.
     Used to scope a Technical Manager's view of their staff's funnels/proposals.
     """
     if not team_ids:
@@ -332,5 +407,13 @@ def technical_sales_users_for_teams(team_ids):
             models.Q(ts_teams__id__in=list(team_ids))
             | models.Q(handles_all_technical_teams=True)
             | models.Q(id__in=singleton_ids)
+            | models.Q(
+                team_membership__group__group_type='tsg',
+                team_membership__group__team_id__in=list(team_ids),
+            )
+            | models.Q(
+                team_membership__group__group_type='tsg',
+                team_membership__group__covered_team_id__in=list(team_ids),
+            )
         )
     ).distinct()

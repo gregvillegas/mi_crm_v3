@@ -126,6 +126,61 @@
         </div>
     </div>
 
+    <div class="card mb-4 border-info">
+        <div class="card-header bg-dark text-white d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <h5 class="mb-0">Pipeline Outside Team Rows</h5>
+            <span class="badge bg-light text-dark">
+                ₱{{ coverage.outside_team.pipeline|floatformat:0|intcomma }}
+                · {{ coverage.outside_team.deal_count }} deals
+            </span>
+        </div>
+        <div class="card-body">
+            <p class="text-muted small mb-3">
+                These deals are included in the overall pipeline total for your current scope but are
+                owned by users without a team membership, so they do not appear in the team rows above.
+            </p>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Owner role</th>
+                            <th class="text-end">Open pipeline</th>
+                            <th class="text-end">Deals</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in coverage.outside_team.rows %}
+                        <tr>
+                            <td class="fw-semibold">{{ row.role }}</td>
+                            <td class="text-end">₱{{ row.pipeline|floatformat:0|intcomma }}</td>
+                            <td class="text-end">{{ row.deal_count }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="3" class="text-center text-muted py-4">
+                                All open pipeline is represented in the team rows.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot class="table-light fw-semibold">
+                        <tr>
+                            <td>Reconciliation</td>
+                            <td class="text-end">
+                                ₱{{ coverage.team_pipeline_total|add:coverage.outside_team.pipeline|floatformat:0|intcomma }}
+                                <small class="d-block text-muted fw-normal">Matches open pipeline total</small>
+                            </td>
+                            <td class="text-end">
+                                {{ coverage.team_deal_count|add:coverage.outside_team.deal_count }}
+                                <small class="d-block text-muted fw-normal">Matches active deal count</small>
+                            </td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+
     <!-- 2. Stalled deals -->
     <div class="card mb-4">
         <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
