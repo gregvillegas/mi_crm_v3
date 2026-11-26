@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     'gamification',
     'mass_mailing',
     'warehouse',
+    'purchasing',
 ]
 
 MIDDLEWARE = [

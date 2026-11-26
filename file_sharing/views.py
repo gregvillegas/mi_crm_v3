@@ -443,7 +443,7 @@ def all_groups_files(request):
 from .models import CompanyFileShare, CompanyFileAccessLog
 from .forms import CompanyFileUploadForm, CompanyFileEditForm
 
-COMPANY_FILE_MANAGER_ROLES = ['admin', 'president', 'gm', 'vp']
+COMPANY_FILE_MANAGER_ROLES = ['admin', 'president', 'gm', 'vp', 'purchasing', 'purchasing_supervisor']
 
 
 def user_can_manage_company_files(user):

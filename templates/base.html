@@ -700,7 +700,7 @@
                 <ul class="navbar-nav me-auto mb-2 mb-lg-0 align-items-center">
                     {% if user.is_authenticated %}
                       {% if user.role == 'warehouse' %}
-                        {# Soft lock: warehouse staff see only the warehouse app. #}
+                        {# Soft lock: warehouse staff see only the warehouse app + company announcements. #}
                         <li class="nav-item">
                             <a class="nav-link" href="{% url 'warehouse:dashboard' %}" title="Warehouse Deliveries">
                                 <i class="fas fa-truck-fast"></i><span>Deliveries</span>
@@ -709,6 +709,14 @@
                         <li class="nav-item">
                             <a class="nav-link" href="{% url 'warehouse:history' %}" title="Delivery History">
                                 <i class="fas fa-clock-rotate-left"></i><span>History</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link position-relative" href="{% url 'mass_mailing:announcement_feed' %}" title="Announcements &amp; Events">
+                                <i class="fas fa-bullhorn"></i><span>Announcements</span>
+                                {% if marketing_updates_count %}
+                                <span class="badge rounded-pill bg-danger" style="font-size:0.6rem;">{{ marketing_updates_count }}</span>
+                                {% endif %}
                             </a>
                         </li>
                       {% else %}
@@ -803,6 +811,30 @@
                                 </ul>
                             </li>
                         {% endif %}
+                        {% if user.role == 'operation_mgr' or user.role == 'purchasing' or user.role == 'purchasing_supervisor' %}
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle" href="#" id="warehouseDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false" title="Warehouse">
+                                <i class="fas fa-warehouse"></i><span>Warehouse</span>
+                            </a>
+                            <ul class="dropdown-menu shadow" aria-labelledby="warehouseDropdown">
+                                <li><a class="dropdown-item" href="{% url 'warehouse:dashboard' %}"><i class="fas fa-truck-fast me-2"></i>Delivery Board</a></li>
+                                <li><a class="dropdown-item" href="{% url 'warehouse:history' %}"><i class="fas fa-clock-rotate-left me-2"></i>Delivery History</a></li>
+                            </ul>
+                        </li>
+                        {% endif %}
+                        {% if user.role == 'admin' or user.role == 'purchasing' or user.role == 'purchasing_supervisor' or user.role == 'operation_mgr' %}
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle" href="#" id="purchasingDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false" title="Purchasing">
+                                <i class="fas fa-cart-shopping"></i><span>Purchasing</span>
+                            </a>
+                            <ul class="dropdown-menu shadow" aria-labelledby="purchasingDropdown">
+                                <li><a class="dropdown-item" href="{% url 'purchasing:dashboard' %}"><i class="fas fa-gauge-high me-2"></i>Dashboard</a></li>
+                                <li><a class="dropdown-item" href="{% url 'purchasing:supplier_list' %}"><i class="fas fa-industry me-2"></i>Suppliers</a></li>
+                                <li><a class="dropdown-item" href="{% url 'purchasing:product_list' %}"><i class="fas fa-boxes-stacked me-2"></i>Products</a></li>
+                                <li><a class="dropdown-item" href="{% url 'purchasing:pricelist_import' %}"><i class="fas fa-file-import me-2"></i>Import Price List</a></li>
+                            </ul>
+                        </li>
+                        {% endif %}
                         {% if user.role in 'admin,marketing' %}
                         <li class="nav-item dropdown">
                             <a class="nav-link dropdown-toggle" href="#" id="massMailingDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false" title="Mass Mailing">
@@ -814,6 +846,7 @@
                                 <li><a class="dropdown-item" href="{% url 'mass_mailing:announcement_list' %}"><i class="fas fa-bullhorn me-2"></i>Announcements &amp; Events</a></li>
                             </ul>
                         </li>
+                        {% elif user.role == 'purchasing' or user.role == 'purchasing_supervisor' or user.role == 'operation_mgr' %}
                         {% else %}
                         <li class="nav-item">
                             <a class="nav-link" href="{% url 'mass_mailing:campaign_list' %}" title="Mass Mailing">

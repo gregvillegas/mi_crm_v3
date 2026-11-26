@@ -18,8 +18,11 @@ class User(AbstractUser):
         ('technical_sales', 'Technical Sales'),
         ('marketing', 'Marketing'),
         ('warehouse', 'Warehouse'),
+        ('purchasing', 'Purchasing'),
+        ('purchasing_supervisor', 'Purchasing Supervisor'),
+        ('operation_mgr', 'Operations Manager'),
     )
-    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='salesperson')
+    role = models.CharField(max_length=22, choices=ROLE_CHOICES, default='salesperson')
     initials = models.CharField(max_length=3, blank=True, help_text='3-letter initials for the user (e.g., JDO for John Doe)')
     mobile_number = models.CharField(max_length=20, blank=True, null=True, help_text='Mobile number of the user')
     profile_picture = models.ImageField(upload_to='profile_pictures/', blank=True, null=True, help_text='Profile picture for the user')

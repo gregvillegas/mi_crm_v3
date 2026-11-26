@@ -56,6 +56,24 @@ class DeliveryDashboardViewTests(TestCase):
         response = self.client.get(reverse('warehouse:dashboard'))
         self.assertEqual(response.status_code, 403)
 
+    def test_dashboard_accessible_to_operation_mgr(self):
+        ops = User.objects.create_user(
+            username='wh_ops', password='testpass123', role='operation_mgr',
+            email='wh_ops@example.com',
+        )
+        self.client.force_login(ops)
+        response = self.client.get(reverse('warehouse:dashboard'))
+        self.assertEqual(response.status_code, 200)
+
+    def test_operation_mgr_can_edit_deliveries(self):
+        ops = User.objects.create_user(
+            username='wh_ops_edit', password='testpass123', role='operation_mgr',
+            email='wh_ops_edit@example.com',
+        )
+        self.client.force_login(ops)
+        response = self.client.get(reverse('warehouse:create'))
+        self.assertEqual(response.status_code, 200)
+
     def test_dashboard_van_details_grouping(self):
         self.client.force_login(self.warehouse_user)
         response = self.client.get(
@@ -606,6 +624,15 @@ class WarehouseSoftLockTests(TestCase):
         self.client.force_login(self.warehouse_user)
         response = self.client.get(reverse('home'))
         self.assertRedirects(response, reverse('warehouse:dashboard'))
+
+    def test_home_does_not_redirect_operation_mgr(self):
+        ops = User.objects.create_user(
+            username='wh_lock_ops', password='testpass123', role='operation_mgr',
+            email='wh_lock_ops@example.com',
+        )
+        self.client.force_login(ops)
+        response = self.client.get(reverse('home'))
+        self.assertEqual(response.status_code, 200)
 
     def test_sales_monitoring_dashboard_forbidden_for_warehouse(self):
         self.client.force_login(self.warehouse_user)

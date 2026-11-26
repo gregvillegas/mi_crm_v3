@@ -28,6 +28,17 @@ def can_manage_announcements(user):
     return getattr(user, 'is_authenticated', False) and user.role in ['admin', 'marketing']
 
 
+# Roles that may not access mass-mailing campaigns at all. Purchasing staff and
+# operations managers have no business with outbound marketing campaigns; the
+# company-wide announcement feed remains visible to them.
+CAMPAIGN_BLOCKED_ROLES = {'purchasing', 'purchasing_supervisor', 'operation_mgr'}
+
+
+def can_access_campaigns(user):
+    """Whether the user may open campaign pages (list, create, detail, ...)."""
+    return getattr(user, 'is_authenticated', False) and getattr(user, 'role', None) not in CAMPAIGN_BLOCKED_ROLES
+
+
 def active_announcements_qs():
     """Active announcements/events, newest first — the company-wide feed source."""
     return Announcement.objects.filter(is_active=True).select_related('created_by')
@@ -204,6 +215,8 @@ def save_campaign_recipients(campaign, recipient_payloads):
 
 def get_allowed_campaigns(user):
     """Returns a queryset of campaigns the user is allowed to see based on their role."""
+    if not can_access_campaigns(user):
+        return Campaign.objects.none()
     if user.role == 'salesperson':
         return Campaign.objects.filter(created_by=user)
         
@@ -243,6 +256,8 @@ def get_allowed_campaigns(user):
 
 @login_required
 def campaign_list(request):
+    if not can_access_campaigns(request.user):
+        return HttpResponseForbidden("You don't have permission to access campaigns.")
     campaigns = get_allowed_campaigns(request.user).order_by('-created_at')
     return render(request, 'mass_mailing/campaign_list.html', {'campaigns': campaigns})
 
@@ -297,6 +312,8 @@ def media_library(request):
 
 @login_required
 def campaign_create(request):
+    if not can_access_campaigns(request.user):
+        return HttpResponseForbidden("You don't have permission to create campaigns.")
     library_assets = MediaLibraryAsset.objects.filter(is_active=True)
     selected_library_ids = []
     if request.method == 'POST':

@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% load crispy_forms_tags %}
+{% block content %}
+<div class="container">
+  <h2>Import Supplier Price List</h2>
+  <div class="card">
+    <div class="card-body">
+      <div class="alert alert-info small">
+        <strong>Required columns:</strong> Supplier Name, Product SKU, Description, Unit Cost.<br>
+        <strong>Optional columns:</strong> Contact Person, Supplier Email, Supplier Phone, Lead Time, Currency (default: PHP).<br>
+        The uploaded file is also published to the <strong>company shared folder</strong> so all users can download it.
+      </div>
+      <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        {% crispy form %}
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

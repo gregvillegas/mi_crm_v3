@@ -1,0 +1,91 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block content %}
+<div class="container">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>Purchasing</h2>
+    <a href="{% url 'purchasing:pricelist_import' %}" class="btn btn-primary btn-sm">
+      <i class="fas fa-file-import me-1"></i> Import Price List
+    </a>
+  </div>
+
+  <div class="row g-3 mb-4">
+    <div class="col-md-3 col-6">
+      <div class="card text-center border-0 shadow-sm">
+        <div class="card-body">
+          <h3 class="mb-0">{{ active_suppliers }}</h3>
+          <small class="text-muted">Active Suppliers</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3 col-6">
+      <div class="card text-center border-0 shadow-sm">
+        <div class="card-body">
+          <h3 class="mb-0">{{ active_products }}</h3>
+          <small class="text-muted">Active Products</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3 col-6">
+      <div class="card text-center border-0 shadow-sm">
+        <div class="card-body">
+          <h3 class="mb-0">{{ active_prices }}</h3>
+          <small class="text-muted">Active Prices</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3 col-6">
+      <div class="card text-center border-0 shadow-sm {% if expiring_prices %}border-danger{% endif %}">
+        <div class="card-body">
+          <h3 class="mb-0 {% if expiring_prices %}text-danger{% endif %}">{{ expiring_prices }}</h3>
+          <small class="text-muted">Expiring (30 days)</small>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-lg-8">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h5 class="mb-0">Suppliers</h5>
+          <a href="{% url 'purchasing:supplier_create' %}" class="btn btn-sm btn-outline-primary">
+            <i class="fas fa-plus me-1"></i> New Supplier
+          </a>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-hover mb-0">
+            <thead>
+              <tr><th>Name</th><th>Contact</th><th>Payment Terms</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+              {% for s in suppliers %}
+              <tr>
+                <td><a href="{% url 'purchasing:supplier_detail' s.pk %}">{{ s.name }}</a></td>
+                <td>{{ s.contact_person|default:"—" }}</td>
+                <td>{{ s.payment_terms|default:"—" }}</td>
+                <td>
+                  <a href="{% url 'purchasing:supplier_detail' s.pk %}" class="btn btn-sm btn-outline-primary">View</a>
+                </td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="4" class="text-center py-3 text-muted">No suppliers yet.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-4">
+      <div class="card">
+        <div class="card-header"><h5 class="mb-0">Quick Links</h5></div>
+        <div class="list-group list-group-flush">
+          <a href="{% url 'purchasing:supplier_list' %}" class="list-group-item list-group-item-action"><i class="fas fa-industry me-2"></i>All Suppliers</a>
+          <a href="{% url 'purchasing:product_list' %}" class="list-group-item list-group-item-action"><i class="fas fa-boxes-stacked me-2"></i>Product Catalog</a>
+          <a href="{% url 'purchasing:pricelist_import' %}" class="list-group-item list-group-item-action"><i class="fas fa-file-import me-2"></i>Import Price List</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

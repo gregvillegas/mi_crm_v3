@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block content %}
+<div class="container">
+  <h2>Price Change History</h2>
+  <div class="card mb-3">
+    <div class="card-body">
+      <p class="mb-1"><strong>Supplier:</strong> <a href="{% url 'purchasing:supplier_detail' price.supplier.pk %}">{{ price.supplier.name }}</a></p>
+      <p class="mb-1"><strong>Product:</strong> {{ price.product.sku }} — {{ price.product.description|truncatechars:80 }}</p>
+      <p class="mb-0"><strong>Current Cost:</strong> {{ price.currency }} {{ price.unit_cost|floatformat:2|intcomma }}</p>
+    </div>
+  </div>
+  <div class="card">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead>
+          <tr><th>Date</th><th>Previous Cost</th><th>New Cost</th><th>Previous Lead Time</th><th>New Lead Time</th><th>Changed By</th><th>Notes</th></tr>
+        </thead>
+        <tbody>
+          {% for log in logs %}
+          <tr>
+            <td>{{ log.changed_at|date:"Y-m-d H:i" }}</td>
+            <td>{% if log.previous_unit_cost %}{{ log.previous_unit_cost|floatformat:2|intcomma }}{% else %}<span class="text-muted">new</span>{% endif %}</td>
+            <td>{{ log.new_unit_cost|floatformat:2|intcomma }}</td>
+            <td>{{ log.previous_lead_time_days|default:"—" }}</td>
+            <td>{{ log.new_lead_time_days|default:"—" }}</td>
+            <td>{{ log.changed_by.get_full_name|default:log.changed_by.username|default:"system" }}</td>
+            <td title="{{ log.notes }}">{{ log.notes|truncatechars:40|default:"—" }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="7" class="text-center py-3 text-muted">No change history yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <a href="{% url 'purchasing:supplier_detail' price.supplier.pk %}" class="btn btn-outline-secondary mt-3">Back to Supplier</a>
+</div>
+{% endblock %}

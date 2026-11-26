@@ -46,14 +46,15 @@ DELIVERY_COLUMNS = [
 DELIVERY_VIEWER_ROLES = {
     'salesperson', 'avp', 'supervisor', 'teamlead', 'asm', 'admin',
     'president', 'gm', 'vp', 'technical_sales', 'techmgr', 'asst_techmgr',
-    'warehouse',
+    'warehouse', 'operation_mgr', 'purchasing', 'purchasing_supervisor',
 }
 
 # The Account Manager (salesperson) role may read the board but not export it.
 DELIVERY_EXPORT_EXCLUDED_ROLES = {'salesperson'}
 
-# Only the warehouse office role (and admins) may add or change deliveries.
-DELIVERY_EDITOR_ROLES = {'warehouse', 'admin'}
+# Only the warehouse office role, operations managers, and admins may add or
+# change deliveries.
+DELIVERY_EDITOR_ROLES = {'warehouse', 'admin', 'operation_mgr'}
 
 HISTORY_PAGE_SIZE = 50
 

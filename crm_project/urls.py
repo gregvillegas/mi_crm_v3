@@ -61,6 +61,7 @@ urlpatterns = [
     path('accounts/2fa/', include('allauth.mfa.urls')),  # MFA URLs (TOTP setup, authenticator)
     path('mass-mailing/', include('mass_mailing.urls')),
     path('warehouse/', include('warehouse.urls')),
+    path('purchasing/', include('purchasing.urls')),
 ]
 
 # Serve media files during development

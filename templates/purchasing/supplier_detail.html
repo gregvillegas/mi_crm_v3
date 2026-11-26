@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block content %}
+<div class="container">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>{{ supplier.name }}</h2>
+    <div>
+      <a href="{% url 'purchasing:supplier_update' supplier.pk %}" class="btn btn-outline-secondary btn-sm">Edit</a>
+      <a href="{% url 'purchasing:supplier_list' %}" class="btn btn-outline-secondary btn-sm">Back</a>
+    </div>
+  </div>
+
+  <div class="card mb-4">
+    <div class="card-body row">
+      <div class="col-md-6">
+        <p><strong>Contact:</strong> {{ supplier.contact_person|default:"—" }}</p>
+        <p><strong>Email:</strong> {{ supplier.email|default:"—" }}</p>
+        <p><strong>Phone:</strong> {{ supplier.phone|default:"—" }}</p>
+      </div>
+      <div class="col-md-6">
+        <p><strong>Address:</strong> {{ supplier.address|default:"—" }}</p>
+        <p><strong>Payment Terms:</strong> {{ supplier.payment_terms|default:"—" }}</p>
+        <p><strong>Status:</strong> {% if supplier.is_active %}<span class="badge bg-success">Active</span>{% else %}<span class="badge bg-secondary">Inactive</span>{% endif %}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <h5 class="mb-0">Price List</h5>
+      <a href="{% url 'purchasing:supplier_price_create' supplier.pk %}" class="btn btn-sm btn-primary">
+        <i class="fas fa-plus me-1"></i> Add Price
+      </a>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead>
+          <tr>
+            <th>SKU</th>
+            <th>Description</th>
+            <th>Unit Cost</th>
+            <th>Currency</th>
+            <th>Lead Time</th>
+            <th>Validity</th>
+            <th>Active</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in prices %}
+          <tr>
+            <td>{{ p.product.sku }}</td>
+            <td title="{{ p.product.description }}">{{ p.product.description|truncatechars:50 }}</td>
+            <td>{{ p.unit_cost|floatformat:2|intcomma }}</td>
+            <td>{{ p.currency }}</td>
+            <td>{% if p.lead_time_days %}{{ p.lead_time_days }} days{% else %}—{% endif %}</td>
+            <td>
+              {% if p.valid_from or p.valid_to %}
+                {{ p.valid_from|date:"Y-m-d"|default:"—" }} → {{ p.valid_to|date:"Y-m-d"|default:"—" }}
+              {% else %}—{% endif %}
+            </td>
+            <td>{% if p.is_active %}<span class="badge bg-success">Yes</span>{% else %}<span class="badge bg-secondary">No</span>{% endif %}</td>
+            <td>
+              <a href="{% url 'purchasing:supplier_price_update' p.pk %}" class="btn btn-sm btn-outline-secondary">Edit</a>
+              <a href="{% url 'purchasing:supplier_price_history' p.pk %}" class="btn btn-sm btn-outline-info" title="Change history">
+                <i class="fas fa-history"></i>
+              </a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="8" class="text-center py-3 text-muted">No prices for this supplier yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
